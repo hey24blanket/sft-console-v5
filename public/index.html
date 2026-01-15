@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SFT Console V5.0</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <aside id="sidebar">
+        <div class="sb-header">
+            <span>SFT Project List</span>
+            <div class="sb-filter">
+                <button class="btn-filter active">이름순</button>
+                <button class="btn-filter">최신순</button>
+            </div>
+            <button class="btn" style="width:100%; background:#222;" id="btn-new-project">+ New Project</button>
+        </div>
+        <div class="sb-list" id="project-list">
+        </div>
+    </aside>
+
+    <main id="main-area">
+        <header id="top-bar"
+            style="height: 50px; background: #1a1a1a; border-bottom: 1px solid #333; display: flex; align-items: center; justify-content: space-between; padding: 0 20px;">
+            <div class="logo-area" style="font-weight: bold; font-size: 16px; color: #3498db;">
+                <i class="fas fa-dice-d20"></i> SFT Console V5.0
+            </div>
+
+            <div class="view-tabs" style="display: flex; gap: 5px;">
+                <div class="tab-btn active" data-target="dashboard"><i class="fas fa-columns"></i> Dashboard</div>
+                <div class="tab-btn" data-target="director"><i class="fas fa-film"></i> The Director</div>
+                <div class="tab-btn" data-target="conveyor"><i class="fas fa-rocket"></i> Conveyor</div>
+            </div>
+
+            <div class="top-actions" style="display: flex; gap: 10px;">
+                <button class="btn" id="btn-save-local"><i class="fas fa-download"></i> Save Local</button>
+                <button class="btn" id="btn-settings" style="background:#34495e; border-color:#46637f;">
+                    <i class="fas fa-cog"></i> Settings
+                </button>
+            </div>
+        </header>
+
+        <section id="view-dashboard" class="view-section active">
+            <div class="card" style="margin-bottom: 20px;">
+                <h3><i class="fas fa-info-circle"></i> Basic Info</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;">
+                    <div>
+                        <label style="font-size: 12px; color: #aaa;">Project Title</label>
+                        <input type="text" id="inp-title" style="width: 100%; margin-top: 5px;"
+                            placeholder="Project Name">
+                    </div>
+
+                    <div id="row-gems-s1">
+                        <label style="font-size: 12px; color: #aaa;">Stage 1 Gems URL</label>
+                        <div class="data-actions" style="margin-top: 5px;">
+                            <div id="ver-gems-s1"
+                                style="flex: 1; background: #111; padding: 6px; border: 1px solid #444; border-radius: 4px; font-size: 12px; color: #888; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;">
+                                No Data
+                            </div>
+                            <button class="btn" onclick="openEditor('gems','s1')">Edit</button>
+                            <button class="btn" onclick="openUrl('gems','s1')">Go</button>
+                        </div>
+                    </div>
+
+                    <div id="row-gems-s2">
+                        <label style="font-size: 12px; color: #aaa;">Stage 2 Gems URL</label>
+                        <div class="data-actions" style="margin-top: 5px;">
+                            <div id="ver-gems-s2"
+                                style="flex: 1; background: #111; padding: 6px; border: 1px solid #444; border-radius: 4px; font-size: 12px; color: #888; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;">
+                                No Data
+                            </div>
+                            <button class="btn" onclick="openEditor('gems','s2')">Edit</button>
+                            <button class="btn" onclick="openUrl('gems','s2')">Go</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dash-grid">
+                <div class="card">
+                    <h3><i class="fas fa-file-alt"></i> Stage 1 (Data Structure)</h3>
+
+                    <div class="data-row" id="row-s1-prompt">
+                        <div>
+                            <div class="data-info">System Prompt</div>
+                            <div class="data-ver" id="ver-s1-prompt">No Data</div>
+                        </div>
+                        <div class="data-actions">
+                            <button class="btn" onclick="openEditor('s1','prompt')">Edit</button>
+                            <button class="btn" onclick="copyData('s1','prompt')">Copy</button>
+                        </div>
+                    </div>
+
+                    <div class="data-row" id="row-s1-json">
+                        <div>
+                            <div class="data-info">Result JSON</div>
+                            <div class="data-ver" id="ver-s1-json">No Data</div>
+                        </div>
+                        <div class="data-actions">
+                            <button class="btn" onclick="openEditor('s1','json')">Edit</button>
+                            <button class="btn" onclick="copyData('s1','json')">Copy</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3><i class="fas fa-clapperboard"></i> Stage 2 (Action Plan)</h3>
+
+                    <div class="data-row" id="row-s2-prompt">
+                        <div>
+                            <div class="data-info">System Prompt</div>
+                            <div class="data-ver" id="ver-s2-prompt">No Data</div>
+                        </div>
+                        <div class="data-actions">
+                            <button class="btn" onclick="openEditor('s2','prompt')">Edit</button>
+                            <button class="btn" onclick="copyData('s2','prompt')">Copy</button>
+                        </div>
+                    </div>
+
+                    <div class="data-row" id="row-s2-json">
+                        <div>
+                            <div class="data-info">Result JSON (Director Input)</div>
+                            <div class="data-ver" id="ver-s2-json">No Data</div>
+                        </div>
+                        <div class="data-actions">
+                            <button class="btn" onclick="openEditor('s2','json')">Edit</button>
+                            <button class="btn" onclick="copyData('s2','json')">Copy</button>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                        <button class="btn btn-primary" style="width: 100%; padding: 10px;" onclick="loadToDirector()">
+                            Load to Director <i class="fas fa-play"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="view-director" class="view-section">
+            <div id="timeline-header">
+                <div class="header-controls">
+                    <span style="font-size:12px; color:#aaa;">Timeline</span>
+                    <button class="btn" onclick="fitTimeline()"><i class="fas fa-compress"></i> Fit</button>
+                    <input type="range" id="zoom-slider" min="0.2" max="10" step="0.1" value="5" style="width:100px;">
+                    <span id="tl-duration" style="font-size:12px; color:var(--primary); font-weight:bold;">0:00</span>
+                    <span style="font-size:12px; color:#666; margin-left:auto;">1.0x</span>
+                </div>
+                <div id="timeline-ruler"></div>
+            </div>
+            <div id="track-area">
+                <div id="track-content">
+                </div>
+            </div>
+        </section>
+
+        <section id="view-conveyor" class="view-section" style="background: #111;">
+        </section>
+
+    </main>
+
+    <aside id="inspector-panel">
+        <div class="inspector-header">
+            <span style="font-weight:bold; color:white;"><i class="fas fa-cube"></i> Scene: <span
+                    id="inspector-scene-id" style="color:var(--primary)">-</span></span>
+            <div style="display:flex; gap:5px;">
+                <button class="btn btn-primary" id="btn-inspector-ai"
+                    style="background: #8e44ad; border-color: #8e44ad;">
+                    <i class="fas fa-magic"></i> AI Directing
+                </button>
+                <button class="btn" onclick="saveInspector()">Save <i class="fas fa-check"></i></button>
+                <button class="btn-icon"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <div class="inspector-body">
+            <div class="inspector-column" style="flex:1;">
+                <div style="font-size:11px; font-weight:bold; color:#888; margin-bottom:5px;"><i
+                        class="fas fa-align-left"></i> NARRATION</div>
+                <div class="narration-section">
+                    <div id="inspector-narration" class="narration-text"></div>
+                </div>
+            </div>
+
+            <div class="inspector-column" style="flex:1.5;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                    <span style="font-size:11px; font-weight:bold; color:#888;">BASE VISUAL</span>
+                    <button class="btn-icon" style="font-size:10px;" onclick="addVisualPlan()"><i
+                            class="fas fa-plus"></i></button>
+                </div>
+                <div id="visual-plans-container">
+                </div>
+            </div>
+
+            <div class="inspector-column overlay-col" style="flex:1;">
+                <div style="font-size:11px; font-weight:bold; color:#888; margin-bottom:5px;">OVERLAY</div>
+                <div
+                    style="background:#222; padding:10px; border:1px solid #444; border-radius:4px; margin-bottom:15px;">
+                    <div style="margin-bottom:5px;">
+                        <input type="checkbox" id="overlay-enabled"> <label for="overlay-enabled"
+                            style="font-size:12px;">Enabled</label>
+                    </div>
+                    <textarea id="overlay-text" class="plan-textarea" placeholder="Overlay description..."></textarea>
+                </div>
+
+                <div style="font-size:11px; font-weight:bold; color:#888; margin-bottom:5px;">RESOURCE</div>
+                <div id="resource-area" style="font-size:12px; color:#666;">-</div>
+
+                <div id="interaction-section"
+                    style="margin-top:15px; display:none; border-top:1px solid #444; padding-top:10px;">
+                    <div style="font-size:11px; font-weight:bold; color:#e056fd; margin-bottom:5px;">INTERACTION</div>
+                    <div style="font-size:12px; color:#ddd; margin-bottom:5px;">Type: <span
+                            id="experience-type">-</span></div>
+                    <div id="experience-guide" style="font-size:11px; color:#aaa; background:#222; padding:5px;">-</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <script type="module" src="js/main.js"></script>
+
+    <script>
+        // 1. 에디터 열기 (Universal Data Manager 연결)
+        window.openEditor = (stage, type) => {
+            if (!window.currPid) return alert("먼저 사이드바에서 프로젝트를 선택해주세요.");
+            if (!window.UniversalData) return alert("데이터 매니저가 로딩되지 않았습니다. 새로고침 해주세요.");
+
+            const dbKey = [window.currPid, stage, type];
+            let title = `${stage.toUpperCase()} : ${type}`;
+            if (stage === 'gems') title = `Gems URL (${type})`;
+
+            window.UniversalData.open('stage_data', dbKey, title);
+        };
+
+        // 2. Director 탭으로 이동 (데이터 로드 포함)
+        window.loadToDirector = async () => {
+            if (!window.currPid) return alert("프로젝트를 선택해주세요.");
+
+            // ★ DB에서 데이터 로드하여 window.directorJson에 세팅
+            if (window.ProjectMgrInstance) {
+                await window.ProjectMgrInstance.loadDirectorState();
+            } else {
+                console.warn("ProjectMgrInstance not found");
+            }
+
+            // 탭 전환
+            const tabBtn = document.querySelector('[data-target="director"]');
+            if (tabBtn) tabBtn.click();
+
+            if (window.Toast) window.Toast.show("Director Loaded!");
+        };
+
+        // 3. 기타 헬퍼 함수들
+        window.closeEditor = () => { };
+        window.saveModalData = () => { };
+        window.saveInspector = () => window.InspectorInstance?.save();
+        window.addVisualPlan = () => window.InspectorInstance?.addVisualPlan();
+
+        window.openUrl = (stage, type) => {
+            alert("URL 기능은 준비 중입니다. Edit 버튼을 눌러 확인하세요.");
+        }
+
+        window.copyData = (stage, type) => {
+            alert("Edit 버튼을 눌러 내용을 확인하고 복사하세요.");
+        }
+    </script>
+</body>
+
+</html>
