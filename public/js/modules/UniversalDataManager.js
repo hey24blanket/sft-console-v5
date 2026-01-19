@@ -1,71 +1,76 @@
+// public/js/modules/UniversalDataManager.js
 import { db } from './Database.js';
 import { Toast } from './Toast.js';
 
-// ★ 모델 정보 데이터베이스 (2026년 기준)
 const MODEL_SPECS = [
-    { id: 'GPT-5.2-pro', provider: 'openai', name: 'GPT-5.2 Pro', desc: '최고급, 긴 맥락/최상 정밀도', price: '₩200 / 10k자' },
-    { id: 'GPT-5.2', provider: 'openai', name: 'GPT-5.2', desc: '안정성 + 강력함 + 실사용 추천', price: '₩60 / 10k자' },
-    { id: 'GPT-5.1', provider: 'openai', name: 'GPT-5.1', desc: '비용 절감형, 빠른 응답 속도', price: '₩10 / 10k자' },
-    { id: 'Gemini-3-pro', provider: 'google', name: 'Gemini 3 Pro', desc: '강력한 문서/논리 처리 능력', price: '₩180 / 10k자' },
-    { id: 'Gemini-3-bison', provider: 'google', name: 'Gemini 3 Bison', desc: '성능과 속도의 균형 (Balanced)', price: '₩40 / 10k자' },
-    { id: 'Gemini-2.5-pro', provider: 'google', name: 'Gemini 2.5 Pro', desc: '안정성이 검증된 운영용 모델', price: '₩50 / 10k자' }
+    { id: 'GPT-5.2-pro', provider: 'openai', name: 'GPT-5.2 Pro', desc: '최상급 추론/코딩 (High Cost)', price: '₩200 / 10k자' },
+    { id: 'GPT-5.2', provider: 'openai', name: 'GPT-5.2', desc: '밸런스 모델 (Standard)', price: '₩60 / 10k자' },
+    { id: 'GPT-5.1', provider: 'openai', name: 'GPT-5.1', desc: '초고속/저비용 (Cost Efficient)', price: '₩40 / 10k자' },
+    { id: 'Gemini-3-pro', provider: 'google', name: 'Gemini 3 Pro', desc: '복합 추론/긴 문맥 (Premium)', price: '₩180 / 10k자' },
+    { id: 'Gemini-2.5-pro', provider: 'google', name: 'Gemini 2.5 Pro', desc: '가성비 최강 (Best Value)', price: '₩110 / 10k자' },
+    { id: 'Gemini-2.5-flash', provider: 'google', name: 'Gemini 2.5 Flash', desc: '초고속 (Low Latency)', price: '₩20 / 10k자' }
 ];
 
 export class UniversalDataManager {
     constructor(projectManager) {
         this.pm = projectManager;
         this.context = null;
+        this.activeSourceId = null;
+        this.activeSourceLabel = null;
         this.createModal();
     }
 
     createModal() {
+        if (document.getElementById('udm-modal')) return;
         const div = document.createElement('div');
         div.id = 'udm-modal';
         div.className = 'modal-overlay';
+
         div.innerHTML = `
-            <div class="modal-box" style="width: 1000px; height: 750px; padding: 0; display:flex; flex-direction:column;">
-                <div class="modal-header" style="padding: 15px; background: #252525; flex:0 0 auto;">
-                    <span id="udm-title"><i class="fas fa-database"></i> Data Manager</span>
+            <div class="modal-box" style="width: 1200px; height: 85vh; padding: 0; display:flex; flex-direction:column; background:#222;">
+                <div class="modal-header" style="padding: 15px; background: #252525; border-bottom:1px solid #333; flex:0 0 auto;">
+                    <span id="udm-title" style="font-weight:bold; color:#3498db;"><i class="fas fa-database"></i> Data Manager</span>
                     <button class="btn-icon" id="btn-udm-close"><i class="fas fa-times"></i></button>
                 </div>
 
-                <div class="modal-body udm-container" style="flex:1; overflow:hidden;">
-                    <div class="udm-sidebar">
+                <div class="modal-body udm-container">
+                    <div class="udm-sidebar" style="width:280px; border-right:1px solid #333; background:#1a1a1a; display:flex; flex-direction:column;">
                         <div style="padding:10px; font-size:11px; font-weight:bold; color:#777; border-bottom:1px solid #333;">
                             VERSION HISTORY
                         </div>
-                        <div id="udm-history-list" class="udm-history-list"></div>
+                        <div id="udm-history-list" class="udm-history-list" style="flex:1; overflow-y:auto;"></div>
                     </div>
 
                     <div class="udm-main">
-                        <div class="udm-toolbar">
-                            <div class="udm-info">
-                                <span id="udm-current-ver">Current Live Data</span>
-                                <span id="udm-status" class="udm-status">● Unsaved Changes</span>
+                        <div class="udm-toolbar" style="height:50px; background:#252525; border-bottom:1px solid #333; display:flex; align-items:center; justify-content:space-between; padding:0 15px;">
+                            <div class="udm-info" style="display:flex; align-items:center;">
+                                <span style="font-weight:bold; color:#fff; font-size:13px;">Running (Live)</span>
+                                <span id="udm-source-info" class="source-info"></span>
+                                <span id="udm-status" class="udm-status" style="font-size:11px; margin-left:10px;">● Unsaved Changes</span>
                             </div>
                             <div style="display:flex; gap:8px;">
-                                <input type="text" id="udm-ver-label" placeholder="Version Label" style="width:150px; height:30px;">
-                                <button class="btn" id="btn-udm-save-ver" style="background:#d35400; color:white;">
+                                <input type="text" id="udm-ver-label" placeholder="Version Label" style="width:140px; height:28px; background:#111; border:1px solid #444; color:white; padding:5px; font-size:12px;">
+                                <button class="btn" id="btn-udm-save-ver" style="background:#d35400; color:white; padding:4px 10px;">
                                     <i class="fas fa-tag"></i> Save Version
                                 </button>
                             </div>
                         </div>
                         
-                        <div id="udm-content-wrapper" style="flex:1; position:relative; overflow-y:auto;">
-                            <textarea id="udm-editor" class="ide-editor"></textarea>
-                            <div id="udm-gui-form" style="display:none; padding:20px;"></div>
+                        <div id="udm-content-wrapper">
+                            <textarea id="udm-editor"></textarea>
+                            <div id="udm-gui-form" style="display:none; padding:20px; overflow-y:auto; height:100%;"></div>
                         </div>
                     </div>
                 </div>
 
-                <div class="modal-footer" style="background: #252525; flex:0 0 auto;">
-                    <div style="flex:1; text-align:left; font-size:11px; color:#666; padding-top:8px;">
-                        * Save Version: 히스토리 저장 / Apply: 실제 반영
+                <div class="modal-footer" style="background: #252525; padding:15px; border-top:1px solid #333; flex:0 0 auto; display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:11px; color:#666;">
+                        * Save Version: 히스토리 저장 / Apply: 실제 반영 (GitHub Sync는 즉시 실행)
                     </div>
-                    <button class="btn" id="btn-udm-cancel">Cancel</button>
-                    <button class="btn btn-primary" id="btn-udm-apply" style="width:120px; font-weight:bold;">
-                        Apply & Close
-                    </button>
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn" id="btn-udm-cancel">Cancel</button>
+                        <button class="btn btn-primary" id="btn-udm-apply" style="width:120px; font-weight:bold;">Apply & Close</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -82,308 +87,281 @@ export class UniversalDataManager {
         div.querySelector('#btn-udm-apply').onclick = () => this.applyToLive();
         div.querySelector('#btn-udm-save-ver').onclick = () => this.saveToHistory();
 
-        // 변경 감지
         this.editor.addEventListener('input', () => this.markUnsaved());
         this.guiForm.addEventListener('change', () => this.markUnsaved());
         this.guiForm.addEventListener('input', () => this.markUnsaved());
+
+        window.switchUdmTab = (tabName) => this.switchSettingsTab(tabName);
+        window.selectModel = (id) => this.selectModelCard(id);
+        window.syncGithub = () => this.syncGithub();
     }
 
-    markUnsaved() {
-        this.modal.querySelector('#udm-status').classList.add('unsaved');
-    }
+    markUnsaved() { this.modal.querySelector('#udm-status').classList.add('unsaved'); }
 
     async open(type, id, title) {
         this.context = { type, id, title };
         document.getElementById('udm-title').innerHTML = `<i class="fas fa-edit"></i> ${title}`;
         this.modal.classList.add('open');
         this.labelInput.value = '';
+        this.activeSourceId = null;
+        this.updateHeaderInfo();
 
-        // 데이터 로드
-        let data = null;
-        if (type === 'global_settings') data = await db.global_settings.get(id);
-        else if (type === 'stage_data') data = await db.stage_data.get(id);
-        else if (type === 'system_prompts') data = await db.system_prompts.get(id);
-
-        let content = "";
-        if (data) {
-            if (type === 'stage_data') content = data.current || "";
-            else if (type === 'system_prompts') content = data.content || "";
-            else if (type === 'global_settings') {
-                const { id: _, ...rest } = data;
-                content = JSON.stringify(rest, null, 2);
-            }
-        }
-
-        // ★ 설정(global_settings)일 때만 GUI 폼 표시
         if (type === 'global_settings') {
             this.editor.style.display = 'none';
             this.guiForm.style.display = 'block';
-            this.renderSettingsGUI(content);
+            this.switchSettingsTab('ai'); // Default tab
         } else {
             this.editor.style.display = 'block';
             this.guiForm.style.display = 'none';
-            this.editor.value = content;
+            await this.loadContentForEditor(type, id);
         }
 
         this.modal.querySelector('#udm-status').classList.remove('unsaved');
-        document.getElementById('udm-current-ver').innerText = "Running (Live)";
+    }
+
+    async switchSettingsTab(tabName) {
+        const tabBtns = document.querySelectorAll('.udm-tab-btn');
+        tabBtns.forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`tab-btn-${tabName}`)?.classList.add('active');
+
+        // ★ [Key Separation] 탭별로 다른 ID(Key) 사용
+        if (tabName === 'ai' || tabName === 'github') {
+            this.context.type = 'global_settings';
+            this.context.id = 'main_config';
+        } else if (tabName === 'prompts') {
+            this.context.type = 'system_prompts';
+            // ★ 기존 'master' -> 'api_prompt'로 변경하여 컨베이어와 구분
+            this.context.id = 'api_prompt';
+        }
+
+        const content = await this.loadDataFromDB(this.context.type, this.context.id);
+        this.renderSettingsGUI(tabName, content);
         await this.loadHistoryList();
     }
 
-    // ★ GUI 렌더링 (탭 + 카드 시스템 + GitHub Sync)
-    renderSettingsGUI(jsonContent) {
+    async loadDataFromDB(type, id) {
+        let data = null;
+        if (type === 'global_settings') data = await db.global_settings.get(id);
+        else if (type === 'stage_data') data = await db.stage_data.get({ pid: id[0], stage: id[1], type: id[2] });
+        else if (type === 'system_prompts') data = await db.system_prompts.get(id);
+
+        if (!data) return "";
+        if (type === 'stage_data') return data.current || "";
+        if (type === 'system_prompts') return data.content || "";
+        if (type === 'global_settings') {
+            const { id: _, ...rest } = data;
+            return JSON.stringify(rest, null, 2);
+        }
+        return "";
+    }
+
+    async loadContentForEditor(type, id) {
+        const content = await this.loadDataFromDB(type, id);
+        this.editor.value = content;
+        await this.loadHistoryList();
+    }
+
+    renderSettingsGUI(activeTab, contentJson) {
         let config = {};
-        try { config = JSON.parse(jsonContent || "{}"); } catch (e) { }
+        let promptContent = "";
+
+        if (activeTab === 'prompts') {
+            promptContent = contentJson;
+        } else {
+            try { config = JSON.parse(contentJson || "{}"); } catch (e) { }
+        }
 
         const ai = config.ai_config || {};
         const gh = config.github_config || {};
 
-        this.guiForm.innerHTML = `
-            <div class="udm-tabs">
-                <button class="udm-tab-btn active" onclick="switchUdmTab('ai')"><i class="fas fa-robot"></i> AI Model</button>
-                <button class="udm-tab-btn" onclick="switchUdmTab('github')"><i class="fab fa-github"></i> GitHub</button>
+        const tabsHtml = `
+            <div class="udm-tabs" style="display:flex; border-bottom:1px solid #444; margin-bottom:15px;">
+                <button id="tab-btn-ai" class="udm-tab-btn ${activeTab === 'ai' ? 'active' : ''}" onclick="switchUdmTab('ai')"><i class="fas fa-robot"></i> AI Model</button>
+                <button id="tab-btn-prompts" class="udm-tab-btn ${activeTab === 'prompts' ? 'active' : ''}" onclick="switchUdmTab('prompts')"><i class="fas fa-comment-dots"></i> System Prompts</button>
+                <button id="tab-btn-github" class="udm-tab-btn ${activeTab === 'github' ? 'active' : ''}" onclick="switchUdmTab('github')"><i class="fab fa-github"></i> GitHub</button>
             </div>
+        `;
+        let bodyHtml = '';
 
-            <div id="udm-sec-ai" class="udm-section active">
+        if (activeTab === 'ai') {
+            bodyHtml = `
                 <div class="form-group">
-                    <label class="form-label">API Key (OpenAI / Gemini)</label>
-                    <input type="password" id="gui-api-key" class="form-input" placeholder="sk-..." value="${ai.api_key || ''}">
-                    <div style="font-size:11px; color:#666; margin-top:5px;">* 비워두면 .env 키 사용</div>
+                    <label class="form-label">API Key (OpenAI / Google)</label>
+                    <input type="password" id="gui-api-key" class="form-input" value="${ai.api_key || ''}" placeholder="sk-...">
                 </div>
-
-                <label class="form-label" style="margin-top:20px;">Select AI Model</label>
+                <label class="form-label" style="margin-top:15px;">Select Model</label>
                 <div class="model-grid">
                     ${MODEL_SPECS.map(m => `
                         <div class="model-card ${ai.model === m.id ? 'selected' : ''}" onclick="selectModel('${m.id}')" id="card-${m.id}">
-                            <div class="mc-name">
-                                <i class="fas ${m.provider === 'openai' ? 'fa-bolt' : 'fa-star'}" style="color:${m.provider === 'openai' ? '#10a37f' : '#4285f4'}"></i>
-                                ${m.name}
-                            </div>
+                            <div class="mc-name">${m.name}</div>
                             <div class="mc-desc">${m.desc}</div>
                             <div class="mc-price">${m.price}</div>
                         </div>
                     `).join('')}
                 </div>
                 <input type="hidden" id="gui-selected-model" value="${ai.model || 'GPT-5.2-pro'}">
-            </div>
-
-            <div id="udm-sec-github" class="udm-section">
-                <div class="form-group">
-                    <label class="form-label">Repository Owner (User/Org)</label>
-                    <input type="text" id="gui-repo-owner" class="form-input" placeholder="e.g. MyUserName" value="${gh.repo_owner || ''}">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Repository Name</label>
-                    <input type="text" id="gui-repo-name" class="form-input" placeholder="e.g. sft-console-project" value="${gh.repo_name || ''}">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Branch</label>
-                    <input type="text" id="gui-repo-branch" class="form-input" placeholder="main" value="${gh.branch || 'main'}">
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Personal Access Token (PAT)</label>
-                    <input type="password" id="gui-repo-token" class="form-input" placeholder="ghp_..." value="${gh.token || ''}">
-                    <div style="font-size:11px; color:#666; margin-top:5px;">* 비워두면 .env의 GITHUB_TOKEN 사용</div>
-                </div>
-
-                <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
-                <div class="form-group">
-                    <label class="form-label">Local Project Path (Absolute Path)</label>
-                    <input type="text" id="gui-local-path" class="form-input" placeholder="C:/Projects/MySFTProject" value="${gh.local_path || ''}">
-                    <div style="font-size:11px; color:#aaa; margin-top:5px;">
-                        <i class="fas fa-exclamation-triangle"></i> 서버가 이 경로의 파일들을 Git으로 업로드합니다.
+            `;
+        }
+        else if (activeTab === 'prompts') {
+            // ★ [UI Fix] 텍스트 영역을 모달 꽉 차게 확장
+            bodyHtml = `
+                <div style="display:flex; flex-direction:column; height:100%; min-height:500px;">
+                    <label class="form-label" style="color:#2ecc71; font-size:14px; margin-bottom:10px;">
+                        <i class="fas fa-terminal"></i> API Prompt (AI Persona)
+                    </label>
+                    <div style="font-size:12px; color:#aaa; margin-bottom:10px;">
+                        * 이곳은 'AI Directing' 버튼 클릭 시 API에 전송되는 페르소나 프롬프트입니다. (Conveyor 마스터 프롬프트와 별개)
                     </div>
+                    <textarea id="gui-prompt-editor" style="flex:1; background:#111; color:#eee; border:1px solid #444; padding:15px; resize:none; line-height:1.6; font-family:'Consolas', monospace; font-size:14px;">${promptContent}</textarea>
                 </div>
+            `;
+        }
+        else if (activeTab === 'github') {
+            bodyHtml = `
+                <div class="form-group"><label class="form-label">Repository Owner</label><input type="text" id="gui-repo-owner" class="form-input" value="${gh.repo_owner || ''}"></div>
+                <div class="form-group"><label class="form-label">Repository Name</label><input type="text" id="gui-repo-name" class="form-input" value="${gh.repo_name || ''}"></div>
+                <div class="form-group"><label class="form-label">Branch</label><input type="text" id="gui-repo-branch" class="form-input" value="${gh.branch || 'main'}"></div>
+                <div class="form-group"><label class="form-label">GitHub Token (PAT)</label><input type="password" id="gui-repo-token" class="form-input" value="${gh.token || ''}"></div>
+                <div class="form-group"><label class="form-label">Local Path (Server)</label><input type="text" id="gui-local-path" class="form-input" value="${gh.local_path || ''}"></div>
+                <button class="btn" onclick="syncGithub()" style="margin-top:20px; width:100%; background:#24292e; padding:10px;"><i class="fab fa-github"></i> Sync Now</button>
+            `;
+        }
 
-                <div style="margin-top:20px; text-align:right;">
-                    <button class="btn" id="btn-git-sync" onclick="syncGithub()" style="background:#24292e; border:1px solid #444;">
-                        <i class="fab fa-github"></i> Push to GitHub Now
-                    </button>
-                </div>
-            </div>
-        `;
-
-        // --- 전역 함수 바인딩 ---
-
-        // 1. 탭 전환
-        window.switchUdmTab = (tab) => {
-            document.querySelectorAll('.udm-tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.udm-section').forEach(s => s.classList.remove('active'));
-
-            if (tab === 'ai') {
-                document.querySelector('[onclick="switchUdmTab(\'ai\')"]').classList.add('active');
-                document.getElementById('udm-sec-ai').classList.add('active');
-            } else {
-                document.querySelector('[onclick="switchUdmTab(\'github\')"]').classList.add('active');
-                document.getElementById('udm-sec-github').classList.add('active');
-            }
-        };
-
-        // 2. 모델 선택
-        window.selectModel = (id) => {
-            document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
-            document.getElementById(`card-${id}`).classList.add('selected');
-            document.getElementById('gui-selected-model').value = id;
-            this.markUnsaved();
-        };
-
-        // 3. GitHub Sync 실행
-        window.syncGithub = async () => {
-            const btn = document.getElementById('btn-git-sync');
-            const originalText = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Syncing...`;
-
-            try {
-                // 현재 입력값 가져오기 (저장 안 해도 폼 값으로 시도)
-                const formData = this.getGuiData();
-                const config = JSON.parse(formData);
-
-                // 서버 요청
-                const response = await fetch('/api/git/sync', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(config)
-                });
-
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.error || "Git Sync Failed");
-                }
-
-                const res = await response.json();
-                if (window.Toast) window.Toast.show(res.message);
-                else alert(res.message);
-
-            } catch (e) {
-                console.error(e);
-                alert(`❌ Git Error: ${e.message}`);
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = originalText;
-            }
-        };
+        this.guiForm.innerHTML = tabsHtml + `<div class="udm-section active" style="height:calc(100% - 60px);">${bodyHtml}</div>`;
     }
 
-    // 현재 GUI 값을 JSON 문자열로 변환
-    getGuiData() {
-        if (this.context.type !== 'global_settings') return this.editor.value;
+    selectModelCard(id) {
+        document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+        document.getElementById(`card-${id}`).classList.add('selected');
+        document.getElementById('gui-selected-model').value = id;
+        this.markUnsaved();
+    }
 
-        // 폼에서 값 읽기
-        const aiModel = document.getElementById('gui-selected-model').value;
-        const apiKey = document.getElementById('gui-api-key').value;
-        const provider = aiModel.toLowerCase().includes('gemini') ? 'google' : 'openai';
+    getGuiData() {
+        if (this.context.type !== 'global_settings' && this.context.type !== 'system_prompts') return this.editor.value;
+
+        const promptEditor = document.getElementById('gui-prompt-editor');
+        if (promptEditor) return promptEditor.value;
 
         const config = {
             ai_config: {
-                provider: provider,
-                model: aiModel,
-                api_key: apiKey
+                model: document.getElementById('gui-selected-model')?.value || 'GPT-5.2-pro',
+                api_key: document.getElementById('gui-api-key')?.value || ''
             },
             github_config: {
-                repo_owner: document.getElementById('gui-repo-owner').value,
-                repo_name: document.getElementById('gui-repo-name').value,
-                branch: document.getElementById('gui-repo-branch').value,
-                local_path: document.getElementById('gui-local-path').value,
-                token: document.getElementById('gui-repo-token').value
+                repo_owner: document.getElementById('gui-repo-owner')?.value || '',
+                repo_name: document.getElementById('gui-repo-name')?.value || '',
+                branch: document.getElementById('gui-repo-branch')?.value || 'main',
+                token: document.getElementById('gui-repo-token')?.value || '',
+                local_path: document.getElementById('gui-local-path')?.value || ''
             },
             ui_config: { theme: "dark" }
         };
         return JSON.stringify(config, null, 2);
     }
 
-    // --- 저장 및 로드 로직 (getGuiData 사용) ---
+    async syncGithub() {
+        const btn = document.querySelector('button[onclick="syncGithub()"]');
+        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
 
-    async saveToHistory() {
-        const content = this.getGuiData();
-        const label = this.labelInput.value.trim() || 'Auto Save';
-        const targetIdStr = Array.isArray(this.context.id) ? this.context.id.join('_') : this.context.id;
+        try {
+            const configJson = this.getGuiData();
+            const config = JSON.parse(configJson);
 
-        await db.version_history.add({
-            target_type: this.context.type,
-            target_id: targetIdStr,
-            content: content,
-            label: label,
-            timestamp: Date.now()
-        });
-
-        if (window.Toast) Toast.show(`Version Saved: ${label}`);
-        this.labelInput.value = '';
-        await this.loadHistoryList();
+            const response = await fetch('/api/git/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            if (!response.ok) throw new Error("Sync Failed");
+            const res = await response.json();
+            if (window.Toast) Toast.show(res.message);
+            else alert(res.message);
+        } catch (e) {
+            alert("Git Error: " + e.message);
+        } finally {
+            if (btn) btn.innerHTML = '<i class="fab fa-github"></i> Sync Now';
+        }
     }
 
     async applyToLive() {
         const content = this.getGuiData();
         const { type, id } = this.context;
-
         try {
             if (type === 'global_settings') {
                 const settingsObj = JSON.parse(content);
                 settingsObj.id = id;
-                settingsObj.updatedAt = Date.now();
                 await db.global_settings.put(settingsObj);
-            } else if (type === 'stage_data') {
-                const record = { pid: id[0], stage: id[1], type: id[2], current: content, updatedAt: Date.now() };
-                await db.stage_data.put(record);
-                if (this.pm) this.pm.updateDashboardStatus();
             } else if (type === 'system_prompts') {
                 await db.system_prompts.put({ id: id, content: content, updatedAt: Date.now() });
+            } else if (type === 'stage_data') {
+                await db.stage_data.put({ pid: id[0], stage: id[1], type: id[2], current: content, updatedAt: Date.now() });
+                if (window.ProjectMgrInstance) await window.ProjectMgrInstance.updateDashboardStatus();
             }
-
-            if (window.Toast) Toast.show("Settings Applied!");
+            if (window.Toast) Toast.show("Applied & Saved!");
             this.close();
-        } catch (e) {
-            console.error(e);
-            alert("Save Failed: " + e.message);
-        }
+        } catch (e) { console.error(e); alert("Save Error: " + e.message); }
     }
 
-    close() {
-        this.modal.classList.remove('open');
-        this.context = null;
+    async saveToHistory() {
+        const content = this.getGuiData();
+        const label = this.labelInput.value.trim() || 'Auto Save';
+        const targetIdStr = Array.isArray(this.context.id) ? this.context.id.join('_') : this.context.id;
+        try {
+            await db.version_history.add({ target_type: this.context.type, target_id: targetIdStr, content, label, timestamp: Date.now() });
+            if (window.Toast) Toast.show("Version Saved");
+            this.labelInput.value = '';
+            await this.loadHistoryList();
+        } catch (e) { console.error(e); }
     }
 
     async loadHistoryList() {
         this.historyList.innerHTML = '';
         const targetIdStr = Array.isArray(this.context.id) ? this.context.id.join('_') : this.context.id;
+        const history = await db.version_history.where('[target_type+target_id]').equals([this.context.type, targetIdStr]).reverse().sortBy('timestamp');
 
-        const history = await db.version_history
-            .where({ target_type: this.context.type, target_id: targetIdStr })
-            .reverse()
-            .sortBy('timestamp');
-
-        const liveItem = document.createElement('div');
-        liveItem.className = 'version-item active';
-        liveItem.innerHTML = `<div class="ver-label">Running (Live)</div><div class="ver-date">Now editing...</div>`;
-        liveItem.onclick = () => {
-            if (this.context.type === 'global_settings') this.renderSettingsGUI(this.getGuiData());
-            else this.editor.value = this.getGuiData();
-            this.renderActiveItem(liveItem);
+        const live = document.createElement('div');
+        live.className = `version-item ${this.activeSourceId === null ? 'active-version' : ''}`;
+        live.innerHTML = `<div class="ver-label">Running (Live)</div><div class="ver-date">Now editing...</div>`;
+        if (this.activeSourceId === null) live.style.borderLeft = "4px solid #3498db";
+        live.onclick = () => {
+            this.activeSourceId = null;
+            this.updateHeaderInfo(); this.loadHistoryList();
+            this.switchSettingsTab(this.context.type === 'system_prompts' ? 'prompts' : 'ai');
         };
-        this.historyList.appendChild(liveItem);
+        this.historyList.appendChild(live);
 
         history.forEach(ver => {
             const el = document.createElement('div');
-            el.className = 'version-item';
-            const date = new Date(ver.timestamp).toLocaleString();
-            el.innerHTML = `
-                <div class="ver-label">${ver.label || 'No Label'}</div>
-                <div class="ver-date">${date}</div>
-                <div class="ver-tag">v${ver.id}</div>
-            `;
-            el.onclick = () => {
-                if (this.context.type === 'global_settings') this.renderSettingsGUI(ver.content);
-                else this.editor.value = ver.content;
-                this.renderActiveItem(el);
-                this.markUnsaved();
-            };
+            const isActive = (ver.id == this.activeSourceId);
+            el.className = `version-item ${isActive ? 'active-version' : ''}`;
+            const badgeHtml = isActive ? `<span class="current-badge">CURRENT</span>` : '';
+            el.innerHTML = `<div class="ver-label">${ver.label} ${badgeHtml}</div><div class="ver-date">${new Date(ver.timestamp).toLocaleString()}</div><div class="ver-tag">v${ver.id}</div>`;
+            el.onclick = () => { if (confirm("Load this version?")) this.loadVersionToEditor(ver); };
             this.historyList.appendChild(el);
         });
     }
 
-    renderActiveItem(el) {
-        this.historyList.querySelectorAll('.version-item').forEach(i => i.classList.remove('active'));
-        el.classList.add('active');
+    loadVersionToEditor(version) {
+        const activeTab = document.querySelector('.udm-tab-btn.active')?.innerText.includes('Prompts') ? 'prompts' : 'ai';
+
+        if (activeTab === 'prompts') {
+            document.getElementById('gui-prompt-editor').value = version.content;
+        } else if (activeTab === 'ai' || activeTab === 'github') {
+            this.renderSettingsGUI(activeTab, version.content);
+        } else {
+            this.editor.value = version.content;
+        }
+
+        this.activeSourceId = version.id;
+        this.activeSourceLabel = version.label;
+        this.updateHeaderInfo();
+        this.loadHistoryList();
     }
+
+    updateHeaderInfo() {
+        const infoEl = document.getElementById('udm-source-info');
+        infoEl.innerText = this.activeSourceId ? `- Based on: ${this.activeSourceLabel}` : '';
+    }
+    close() { this.modal.classList.remove('open'); this.context = null; }
 }

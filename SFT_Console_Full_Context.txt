@@ -1,0 +1,3722 @@
+=== PROJECT STRUCTURE ===
+./
+    .env
+    .gitignore
+    export_project.py
+    jj.json
+    package-lock.json
+    package.json
+    server.js
+    SFT_Console_Full_Context.txt
+    public/
+        index.html
+        css/
+            style.css
+        js/
+            main.js
+            modules/
+                AiResultModal.js
+                ConveyorRenderer.js
+                Database.js
+                EditorModal.js
+                GitManager.js
+                Inspector.js
+                ProjectManager.js
+                TimelineRenderer.js
+                Toast.js
+                UIManager.js
+                UniversalDataManager.js
+    server/
+        index.js
+        prompts/
+            director_exp_v5.txt
+            director_v5.txt
+        routes/
+            ai.js
+            git.js
+        services/
+            AiService.js
+            GitService.js
+
+
+==============================
+FILE PATH: .\server.js
+==============================
+const express = require('express');
+const path = require('path');
+const app = express();
+const port = 3001; // 또는 3001 등 사용하시는 포트
+
+// 1. 미들웨어 설정
+app.use(express.json()); // JSON 요청 본문 파싱
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public')); // public 폴더를 정적 파일로 제공
+
+// 2. 라우터 파일 가져오기
+const aiRoutes = require('./server/routes/ai');
+const gitRoutes = require('./server/routes/git'); // ★ 이번에 추가된 부분
+
+// 3. API 라우트 등록
+app.use('/api/ai', aiRoutes);
+app.use('/api/git', gitRoutes); // ★ 이번에 추가된 부분
+
+// 4. 메인 페이지 라우팅 (SPA 지원 등을 위해)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// 5. 서버 시작
+app.listen(port, () => {
+    console.log(`=========================================`);
+    console.log(`🚀 SFT Console V5 Server running on port ${port}`);
+    console.log(`📂 Serving static files from: ./public`);
+    console.log(`🤖 AI Routes: /api/ai/generate`);
+    console.log(`🐙 Git Routes: /api/git/sync`);
+    console.log(`=========================================`);
+});
+
+==============================
+FILE PATH: .\public\index.html
+==============================
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SFT Console V5.0</title>
+
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+
+    <style>
+        /* Inspector 패널 스타일 (기존 유지) */
+        #inspector-panel {
+            position: fixed !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: -100% !important;
+            width: 100vw !important;
+            margin: 0 !important;
+            height: 350px;
+            min-height: 200px;
+            max-height: 85vh;
+            background: #1a1a1a !important;
+            border-top: 1px solid #444 !important;
+            z-index: 9999 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5) !important;
+            transition: bottom 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        #inspector-panel.open {
+            bottom: 0 !important;
+        }
+
+        .resize-handle {
+            height: 12px;
+            background: #252525;
+            border-bottom: 1px solid #333;
+            cursor: ns-resize;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .resize-handle::after {
+            content: '';
+            width: 40px;
+            height: 4px;
+            background: #555;
+            border-radius: 2px;
+        }
+
+        .inspector-body {
+            display: flex !important;
+            flex-direction: row !important;
+            gap: 20px !important;
+            padding: 15px 20px !important;
+            overflow-y: hidden !important;
+            flex: 1;
+            width: 100%;
+        }
+
+        .inspector-column {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        .inspector-column:nth-child(2) {
+            flex: 1.5;
+        }
+
+        /* Toast & Conveyor 스타일 */
+        #toast-container {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10000;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .toast-msg {
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 30px;
+            font-size: 14px;
+            border: 1px solid #555;
+            animation: fadeInOut 3s forwards;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        @keyframes fadeInOut {
+
+            0%,
+            100% {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            10%,
+            90% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .conv-display.done {
+            background: rgba(46, 204, 113, 0.05) !important;
+            border: 2px solid #2ecc71 !important;
+        }
+
+        .conv-display.done::before {
+            content: "✔ AI Generated";
+            display: block;
+            background: #2ecc71;
+            color: black;
+            font-weight: bold;
+            font-size: 11px;
+            padding: 4px 8px;
+            width: fit-content;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="toast-container"></div>
+
+    <aside id="sidebar">
+        <div class="sb-header">
+            <span>SFT Project List</span>
+            <div class="sb-filter">
+                <button class="btn-filter active">이름순</button>
+                <button class="btn-filter">최신순</button>
+            </div>
+            <button class="btn" style="width:100%; background:#222;" id="btn-new-project">+ New Project</button>
+        </div>
+        <div class="sb-list" id="project-list"></div>
+    </aside>
+
+    <main id="main-area">
+        <header id="top-bar"
+            style="height: 50px; background: #1a1a1a; border-bottom: 1px solid #333; display: flex; align-items: center; justify-content: space-between; padding: 0 20px;">
+            <div class="logo-area" style="font-weight: bold; font-size: 16px; color: #3498db;">
+                <i class="fas fa-dice-d20"></i> SFT Console V5.0
+            </div>
+            <div class="view-tabs" style="display: flex; gap: 5px;">
+                <div class="tab-btn active" data-target="dashboard"><i class="fas fa-columns"></i> Dashboard</div>
+                <div class="tab-btn" data-target="director"><i class="fas fa-film"></i> The Director</div>
+                <div class="tab-btn" data-target="conveyor"><i class="fas fa-rocket"></i> Conveyor</div>
+            </div>
+            <div class="top-actions" style="display: flex; gap: 10px;">
+                <button class="btn" id="btn-save-local"><i class="fas fa-download"></i> Save Local</button>
+                <button class="btn" id="btn-settings" style="background:#34495e; border-color:#46637f;"><i
+                        class="fas fa-cog"></i> Settings</button>
+            </div>
+        </header>
+
+        <section id="view-dashboard" class="view-section active">
+            <div class="card" style="margin-bottom: 20px;">
+                <h3><i class="fas fa-info-circle"></i> Basic Info</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;">
+                    <div>
+                        <label style="font-size: 12px; color: #aaa;">Project Title</label>
+                        <input type="text" id="inp-title" style="width: 100%; margin-top: 5px;"
+                            placeholder="Project Name">
+                    </div>
+                    <div id="row-gems-s1">
+                        <label style="font-size: 12px; color: #aaa;">Stage 1 Gems URL</label>
+                        <div class="data-actions" style="margin-top: 5px;">
+                            <div id="ver-gems-s1"
+                                style="flex: 1; background: #111; padding: 6px; border: 1px solid #444; border-radius: 4px; font-size: 12px; color: #888; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;">
+                                No Data</div>
+                            <button class="btn" onclick="openEditor('gems','s1')">Edit</button>
+                            <button class="btn" onclick="openUrl('gems','s1')">Go</button>
+                        </div>
+                    </div>
+                    <div id="row-gems-s2">
+                        <label style="font-size: 12px; color: #aaa;">Stage 2 Gems URL</label>
+                        <div class="data-actions" style="margin-top: 5px;">
+                            <div id="ver-gems-s2"
+                                style="flex: 1; background: #111; padding: 6px; border: 1px solid #444; border-radius: 4px; font-size: 12px; color: #888; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;">
+                                No Data</div>
+                            <button class="btn" onclick="openEditor('gems','s2')">Edit</button>
+                            <button class="btn" onclick="openUrl('gems','s2')">Go</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dash-grid">
+                <div class="card">
+                    <h3><i class="fas fa-file-alt"></i> Stage 1 (Data Structure)</h3>
+                    <div class="data-row" id="row-s1-prompt">
+                        <div>
+                            <div class="data-info">System Prompt</div>
+                            <div class="data-ver" id="ver-s1-prompt">No Data</div>
+                        </div>
+                        <div class="data-actions"><button class="btn" onclick="openEditor('s1','prompt')">Edit</button>
+                        </div>
+                    </div>
+                    <div class="data-row" id="row-s1-json">
+                        <div>
+                            <div class="data-info">Result JSON</div>
+                            <div class="data-ver" id="ver-s1-json">No Data</div>
+                        </div>
+                        <div class="data-actions"><button class="btn" onclick="openEditor('s1','json')">Edit</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3><i class="fas fa-clapperboard"></i> Stage 2 (Action Plan)</h3>
+                    <div class="data-row" id="row-s2-prompt">
+                        <div>
+                            <div class="data-info">System Prompt</div>
+                            <div class="data-ver" id="ver-s2-prompt">No Data</div>
+                        </div>
+                        <div class="data-actions"><button class="btn" onclick="openEditor('s2','prompt')">Edit</button>
+                        </div>
+                    </div>
+                    <div class="data-row" id="row-s2-json">
+                        <div>
+                            <div class="data-info">Result JSON (Director Input)</div>
+                            <div class="data-ver" id="ver-s2-json">No Data</div>
+                        </div>
+                        <div class="data-actions"><button class="btn" onclick="openEditor('s2','json')">Edit</button>
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <button class="btn btn-primary" style="width: 100%; padding: 10px;"
+                            onclick="loadToDirector()">Load to Director <i class="fas fa-play"></i></button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="view-director" class="view-section">
+            <div id="timeline-header">
+                <div class="header-controls">
+                    <span style="font-size:12px; color:#aaa;">Timeline</span>
+                    <button class="btn" onclick="fitTimeline()"><i class="fas fa-compress"></i> Fit</button>
+                    <input type="range" id="zoom-slider" min="0.2" max="10" step="0.1" value="5" style="width:100px;">
+                </div>
+                <div id="timeline-ruler"></div>
+            </div>
+            <div id="track-area">
+                <div id="track-content"></div>
+            </div>
+        </section>
+
+        <section id="view-conveyor" class="view-section" style="background: #111;"></section>
+    </main>
+
+    <aside id="inspector-panel">
+        <div class="resize-handle" title="Drag to resize height"></div>
+        <div class="inspector-header">
+            <span style="font-weight:bold; color:white;"><i class="fas fa-cube"></i> Scene: <span
+                    id="inspector-scene-id" style="color:var(--primary)">-</span></span>
+            <div style="display:flex; gap:5px;">
+                <button class="btn btn-primary" id="btn-inspector-ai"
+                    style="background: #8e44ad; border-color: #8e44ad;"><i class="fas fa-magic"></i> AI
+                    Directing</button>
+                <button class="btn" onclick="saveInspector()">Save <i class="fas fa-check"></i></button>
+                <button class="btn-icon"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <div class="inspector-body">
+            <div class="inspector-column">
+                <div style="font-size:11px; font-weight:bold; color:#888; margin-bottom:5px;">NARRATION</div>
+                <div class="narration-section">
+                    <div id="inspector-narration" class="narration-text"></div>
+                </div>
+            </div>
+            <div class="inspector-column">
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                    <span style="font-size:11px; font-weight:bold; color:#888;">BASE VISUAL</span>
+                    <button class="btn-icon" style="font-size:10px;" onclick="addVisualPlan()"><i
+                            class="fas fa-plus"></i></button>
+                </div>
+                <div id="visual-plans-container"></div>
+            </div>
+            <div class="inspector-column overlay-col">
+                <div style="font-size:11px; font-weight:bold; color:#888; margin-bottom:5px;">OVERLAY</div>
+                <div
+                    style="background:#222; padding:10px; border:1px solid #444; border-radius:4px; margin-bottom:15px;">
+                    <textarea id="overlay-text" class="plan-textarea" placeholder="Overlay description..."></textarea>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <script type="module" src="js/main.js"></script>
+    <script>
+        // ★ [핵심 수정] UniversalData를 사용하도록 연결 함수 업데이트
+        window.openEditor = (stage, type) => {
+            if (!window.currPid) return alert("프로젝트를 먼저 선택해주세요.");
+
+            // UniversalDataManager가 로드되었는지 확인
+            if (!window.UniversalData) {
+                console.error("UniversalData module not loaded yet.");
+                return alert("시스템 초기화 중입니다. 잠시 후 다시 시도해주세요.");
+            }
+
+            // DB 키 생성 [pid, stage, type]
+            const dbKey = [window.currPid, stage, type];
+            const title = `${stage.toUpperCase()} : ${type}`;
+
+            // Gems URL인 경우 예외 처리
+            if (stage === 'gems') {
+                window.UniversalData.open('stage_data', dbKey, `Gems URL (${type})`);
+            } else {
+                // 일반 프롬프트/JSON 에디터 열기
+                window.UniversalData.open('stage_data', dbKey, title);
+            }
+        };
+
+        // URL 열기 (Gems 등)
+        window.openUrl = (stage, type) => {
+            alert("URL 바로가기 기능은 준비 중입니다. Edit을 눌러 확인하세요.");
+        };
+
+        // Director로 로드
+        window.loadToDirector = async () => {
+            if (!window.currPid) return alert("프로젝트를 선택해주세요.");
+            if (window.ProjectMgrInstance) {
+                await window.ProjectMgrInstance.loadDirectorState();
+            }
+
+            // 탭 강제 전환
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.view-section').forEach(s => s.classList.remove('active'));
+
+            const dirBtn = document.querySelector('[data-target="director"]');
+            const dirSec = document.getElementById('view-director');
+
+            if (dirBtn) dirBtn.classList.add('active');
+            if (dirSec) dirSec.classList.add('active');
+
+            // 타임라인 리사이즈 (깨짐 방지)
+            if (window.TimelineRendererInstance) {
+                setTimeout(() => window.TimelineRendererInstance.fitTimeline(), 100);
+            }
+        };
+
+        // Inspector 관련 헬퍼
+        window.saveInspector = () => window.InspectorInstance?.save();
+        window.addVisualPlan = () => window.InspectorInstance?.addVisualPlan();
+        window.fitTimeline = () => window.TimelineRendererInstance?.fitTimeline();
+
+        // 데이터 복사
+        window.copyData = (stage, type) => {
+            alert("Edit 버튼을 눌러 내용을 확인하고 복사하세요.");
+        };
+    </script>
+</body>
+
+</html>
+
+==============================
+FILE PATH: .\public\css\style.css
+==============================
+/* =========================================
+   SFT Console V5.0 - Main Stylesheet
+   ========================================= */
+
+/* === 1. Base & Reset === */
+:root {
+    --bg-dark: #121212;
+    --bg-panel: #1e1e1e;
+    --border: #333;
+    --primary: #3498db;
+    --accent: #9b59b6;
+    --text-main: #e0e0e0;
+    --text-sub: #aaa;
+    --seq-line-color: #f1c40f;
+    --success: #2ecc71;
+    --danger: #e74c3c;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+    background: var(--bg-dark);
+    color: var(--text-main);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+}
+
+/* === 2. Layout (Sidebar & Main) === */
+#sidebar {
+    width: 240px;
+    background: #161616;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+#main-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    background: var(--bg-dark);
+}
+
+/* Sidebar Elements */
+.sb-header {
+    padding: 15px;
+    border-bottom: 1px solid var(--border);
+}
+
+.sb-header span {
+    display: block;
+    font-weight: bold;
+    color: var(--primary);
+    margin-bottom: 10px;
+}
+
+.sb-filter {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 10px;
+}
+
+.btn-filter {
+    flex: 1;
+    background: #222;
+    border: 1px solid #444;
+    color: #aaa;
+    padding: 4px;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.btn-filter.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.sb-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.sb-item {
+    padding: 12px 15px;
+    cursor: pointer;
+    border-bottom: 1px solid #252525;
+    font-size: 13px;
+    color: #888;
+    transition: 0.2s;
+}
+
+.sb-item:hover {
+    background: #252525;
+    color: #fff;
+}
+
+.sb-item.active {
+    background: #1e3a8a;
+    color: #fff;
+    border-left: 4px solid var(--primary);
+}
+
+/* === 3. Common UI Components === */
+.btn {
+    padding: 6px 12px;
+    background: #333;
+    border: 1px solid #555;
+    color: #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: 0.2s;
+}
+
+.btn:hover {
+    background: #444;
+    color: white;
+}
+
+.btn-primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    color: #aaa;
+    cursor: pointer;
+}
+
+.btn-icon:hover {
+    color: #fff;
+}
+
+input,
+textarea,
+select {
+    background: #111;
+    border: 1px solid #444;
+    color: #eee;
+    border-radius: 4px;
+    padding: 6px;
+}
+
+/* === 4. Dashboard View === */
+.view-section {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    height: 100%;
+}
+
+.view-section.active {
+    display: flex;
+}
+
+.tab-header {
+    height: 50px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 5px;
+}
+
+.tab-btn {
+    padding: 8px 16px;
+    cursor: pointer;
+    color: var(--text-sub);
+    font-size: 14px;
+    font-weight: bold;
+    border-radius: 4px;
+}
+
+.tab-btn:hover {
+    background: #333;
+    color: #fff;
+}
+
+.tab-btn.active {
+    background: var(--primary);
+    color: #fff;
+}
+
+#view-dashboard {
+    padding: 30px;
+    overflow-y: auto;
+}
+
+.dash-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.card {
+    background: #252525;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.card h3 {
+    margin: 0;
+    border-bottom: 1px solid #444;
+    padding-bottom: 10px;
+    font-size: 16px;
+}
+
+.data-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #1a1a1a;
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid #333;
+}
+
+.data-row.has-data {
+    border-left: 4px solid #27ae60;
+    background: #1e251e;
+}
+
+.data-info {
+    font-size: 12px;
+    font-weight: bold;
+    color: #ddd;
+}
+
+.data-ver {
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 2px;
+}
+
+.data-actions {
+    display: flex;
+    gap: 5px;
+}
+
+/* === 5. Director View (Timeline) === */
+#timeline-header {
+    height: 60px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.header-controls {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 0 15px;
+}
+
+#timeline-ruler {
+    height: 20px;
+    background: #0a0a0a;
+    position: relative;
+    border-top: 1px solid #444;
+    overflow: hidden;
+}
+
+.ruler-mark {
+    position: absolute;
+    height: 100%;
+    border-left: 1px solid #555;
+    padding-left: 3px;
+    font-size: 9px;
+    color: #999;
+    font-family: monospace;
+}
+
+.ruler-mark.major {
+    border-left-color: #888;
+    height: 100%;
+}
+
+#track-area {
+    flex: 1;
+    position: relative;
+    background: #202020;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+#track-content {
+    position: relative;
+    height: 100%;
+    min-width: 100%;
+}
+
+.track-clip {
+    position: absolute;
+    top: 20px;
+    height: 45px;
+    background: #3b82f6;
+    border: 1px solid #60a5fa;
+    border-radius: 4px;
+    cursor: pointer;
+    overflow: hidden;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    transition: transform 0.1s, border-color 0.1s;
+}
+
+.track-clip:hover {
+    transform: translateY(-2px);
+    border-color: white;
+    z-index: 10;
+}
+
+.track-clip.highlighted {
+    border: 2px solid #fff;
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.8);
+    z-index: 20;
+}
+
+.clip-head {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 2px 5px;
+    font-size: 10px;
+    font-weight: bold;
+    color: white;
+    white-space: nowrap;
+    display: flex;
+    justify-content: space-between;
+}
+
+.plan-badge {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0 4px;
+    border-radius: 2px;
+    font-size: 9px;
+}
+
+.seq-title {
+    font-size: 12px;
+    color: var(--seq-line-color);
+    font-weight: bold;
+}
+
+.seq-desc {
+    font-size: 10px;
+    color: #aaa;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: normal !important;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+/* === 6. Inspector Panel (Bottom Dock & Resizable) === */
+#inspector-panel {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: -100% !important;
+    /* Default hidden */
+
+    width: 100vw !important;
+    /* Full Width */
+    margin: 0 !important;
+    height: 350px;
+    min-height: 200px;
+    max-height: 85vh;
+
+    background: #1a1a1a !important;
+    border-top: 1px solid #444 !important;
+    z-index: 9999 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5) !important;
+
+    /* Animation for slide up/down */
+    transition: bottom 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+#inspector-panel.open {
+    bottom: 0 !important;
+}
+
+/* Resize Handle */
+.resize-handle {
+    height: 12px;
+    background: #252525;
+    border-bottom: 1px solid #333;
+    cursor: ns-resize;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.resize-handle:hover {
+    background: #333;
+}
+
+.resize-handle::after {
+    content: '';
+    width: 40px;
+    height: 4px;
+    background: #555;
+    border-radius: 2px;
+}
+
+.inspector-header {
+    padding: 10px 15px;
+    background: #252525;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.inspector-body {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 20px !important;
+    padding: 15px 20px !important;
+    overflow-y: hidden !important;
+    flex: 1;
+    width: 100%;
+}
+
+.inspector-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 10px;
+    overflow-y: auto;
+    min-width: 0;
+}
+
+/* Middle column wider */
+.inspector-column:nth-child(2) {
+    flex: 1.5;
+}
+
+.narration-section {
+    background: #222;
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid #444;
+}
+
+.narration-text {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #ddd;
+    white-space: pre-wrap;
+}
+
+.plan-textarea {
+    width: 100%;
+    background: #111;
+    border: 1px solid #444;
+    color: #ccc;
+    font-size: 11px;
+    min-height: 50px;
+    resize: vertical;
+}
+
+/* === 7. Modal (Data Editor) === */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 9999;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(3px);
+}
+
+.modal-overlay.open {
+    display: flex !important;
+}
+
+.modal-box {
+    width: 900px;
+    height: 700px;
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+    overflow: hidden;
+}
+
+.modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+}
+
+.modal-header {
+    padding: 15px;
+    background: #252525;
+    border-bottom: 1px solid #444;
+    display: flex;
+    justify-content: space-between;
+    font-weight: bold;
+    color: var(--primary);
+}
+
+.modal-body {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+.modal-footer {
+    padding: 15px;
+    background: #252525;
+    border-top: 1px solid #444;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* History Panel inside Modal */
+.history-panel {
+    width: 280px;
+    background: #1a1a1a;
+    border-right: 1px solid #444;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-header {
+    padding: 10px;
+    font-size: 11px;
+    font-weight: bold;
+    color: #888;
+    background: #202020;
+    border-bottom: 1px solid #333;
+}
+
+.version-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.version-item {
+    padding: 12px 15px;
+    border-bottom: 1px solid #2a2a2a;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.version-item:hover {
+    background: #252525;
+}
+
+/* ★ Active Version Highlighting (Plan A) */
+.version-item.active-version {
+    border-left: 4px solid var(--success) !important;
+    background: rgba(46, 204, 113, 0.15) !important;
+}
+
+.current-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: bold;
+    background: var(--success);
+    color: #000;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+    text-transform: uppercase;
+}
+
+.ver-actions {
+    display: flex;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.btn-xs {
+    padding: 2px 6px;
+    font-size: 10px;
+    border-radius: 3px;
+    border: none;
+    cursor: pointer;
+    background: #444;
+    color: #ddd;
+}
+
+.btn-xs:hover {
+    background: #555;
+}
+
+.load-btn {
+    background: var(--primary);
+    color: white;
+}
+
+/* Editor Panel inside Modal */
+.editor-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+}
+
+.editor-tabs {
+    display: flex;
+    background: #252525;
+    border-bottom: 1px solid #444;
+}
+
+.tab-link {
+    padding: 8px 15px;
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 12px;
+    border-bottom: 2px solid transparent;
+}
+
+.tab-link.active {
+    color: #fff;
+    border-bottom-color: var(--primary);
+}
+
+.main-editor {
+    flex: 1;
+    background: #1e1e1e;
+    color: #a9b7c6;
+    border: none;
+    padding: 15px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+}
+
+.source-info {
+    font-size: 11px;
+    color: var(--success);
+    margin-left: 8px;
+    font-weight: normal;
+    opacity: 0.9;
+}
+
+/* === 8. Conveyor View === */
+.conv-toolbar {
+    height: 60px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.conv-container {
+    flex: 1;
+    display: flex;
+    padding: 20px;
+    gap: 20px;
+    background: #121212;
+    overflow: hidden;
+}
+
+.conv-panel {
+    background: #252525;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.mode-group {
+    display: flex;
+    gap: 5px;
+    background: #1a1a1a;
+    padding: 5px;
+    border-radius: 6px;
+}
+
+.mode-btn {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    border-radius: 4px;
+}
+
+.mode-btn.active {
+    background: var(--primary);
+    color: white;
+}
+
+.btn-action {
+    background: #27ae60;
+    border-color: #27ae60;
+    color: white;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn-action:hover {
+    background: #219150;
+}
+
+.btn-action:disabled {
+    background: #444;
+    border-color: #444;
+    color: #888;
+    cursor: not-allowed;
+}
+
+/* Conveyor Output Styles */
+.conv-display {
+    background: #000;
+    border: 1px solid #333;
+    color: #666;
+    padding: 15px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    overflow-y: auto;
+    border-radius: 4px;
+    font-size: 12px;
+    height: 100%;
+    transition: all 0.3s ease;
+}
+
+.conv-display.done {
+    background: rgba(46, 204, 113, 0.05) !important;
+    border: 2px solid var(--success) !important;
+    color: #e0e0e0 !important;
+    box-shadow: 0 0 15px rgba(46, 204, 113, 0.1) !important;
+}
+
+.conv-display.done::before {
+    content: "✔ AI Generated";
+    display: block;
+    background: var(--success);
+    color: black;
+    font-weight: bold;
+    font-size: 11px;
+    padding: 4px 8px;
+    width: fit-content;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+/* === 9. Scrollbar & Extras === */
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}
+
+*::-webkit-scrollbar-corner {
+    background: #1a1a1a;
+}
+
+/* Toast Notifications */
+#toast-container {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+}
+
+.toast-msg {
+    background: rgba(0, 0, 0, 0.9);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 30px;
+    font-size: 14px;
+    border: 1px solid #555;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+    animation: fadeInOut 3s forwards;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+@keyframes fadeInOut {
+    0% {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    10% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    90% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+}
+
+/* --- UIManager Modal Internal Layout --- */
+.modal-layout-container {
+    display: flex;
+    height: 60vh;
+    /* 모달 내부 높이 고정 */
+    border: 1px solid #333;
+    background-color: #121212;
+}
+
+/* Left: Version History */
+.modal-sidebar {
+    width: 280px;
+    background-color: #1e1e1e;
+    border-right: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+}
+
+.history-header {
+    padding: 15px;
+    border-bottom: 1px solid #333;
+    background: #252525;
+}
+
+.history-header h4 {
+    margin: 0 0 10px 0;
+    color: #eee;
+    font-size: 0.9rem;
+}
+
+.history-controls {
+    display: flex;
+    gap: 5px;
+}
+
+.history-controls input {
+    flex: 1;
+    background: #121212;
+    border: 1px solid #444;
+    color: #fff;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.history-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+/* History Item Styling (Plan A) */
+.history-item {
+    padding: 12px 15px;
+    border-bottom: 1px solid #2a2a2a;
+    cursor: pointer;
+    transition: background 0.2s;
+    position: relative;
+}
+
+.history-item:hover {
+    background-color: #2a2a2a;
+}
+
+.history-item .meta {
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 4px;
+}
+
+.history-item .label {
+    font-size: 0.9rem;
+    color: #fff;
+    font-weight: 500;
+}
+
+/* Selected/Current Version Style */
+.history-item.active {
+    background-color: #1e2a22;
+    /* 살짝 녹색 틴트 */
+    border-left: 4px solid #2ecc71;
+    /* 핵심: 초록색 바 */
+}
+
+.history-item.active .label {
+    color: #2ecc71;
+}
+
+.current-badge {
+    display: inline-block;
+    font-size: 0.6rem;
+    background: #2ecc71;
+    color: #000;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 5px;
+    font-weight: bold;
+}
+
+/* Right: Editor Area */
+.modal-editor-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #121212;
+}
+
+.editor-header {
+    padding: 10px 15px;
+    background: #1e1e1e;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.editor-status {
+    font-size: 0.8rem;
+    color: #888;
+}
+
+.status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.status-indicator.unsaved {
+    background-color: #e74c3c;
+}
+
+.status-indicator.saved {
+    background-color: #2ecc71;
+}
+
+.modal-textarea {
+    flex: 1;
+    width: 100%;
+    background: #121212;
+    color: #eee;
+    border: none;
+    padding: 15px;
+    font-family: 'Fira Code', monospace;
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+}
+
+/* =========================================
+   ★ Plan A: Version Control UI Styles
+   ========================================= */
+
+/* 왼쪽 리스트: 현재 선택된 버전 강조 (초록색) */
+.version-item.active-version {
+    border-left: 4px solid #2ecc71 !important;
+    /* 초록색 기둥 */
+    background: rgba(46, 204, 113, 0.15) !important;
+    /* 은은한 초록 배경 */
+}
+
+/* 왼쪽 리스트: Current 뱃지 */
+.current-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: bold;
+    background: #2ecc71;
+    color: #000;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+    text-transform: uppercase;
+}
+
+/* 오른쪽 헤더: 출처 텍스트 (Based on v1...) */
+.source-info {
+    font-size: 11px;
+    color: #2ecc71;
+    /* 초록색 텍스트 */
+    margin-left: 8px;
+    font-weight: normal;
+    opacity: 0.9;
+}
+
+/* 오른쪽 헤더: 저장되지 않음 경고 (Unsaved Changes) */
+.udm-status.unsaved {
+    color: #e74c3c !important;
+    /* 빨간색 */
+    display: inline-block !important;
+    font-weight: bold;
+}
+
+.udm-status {
+    display: none;
+    /* 평소엔 숨김 */
+    font-size: 11px;
+    margin-left: 10px;
+}
+
+/* === Universal Data Manager Layout Fix === */
+
+/* 모달 내부 전체 컨테이너 */
+.udm-container {
+    display: flex;
+    height: 100%;
+    /* 부모 높이 상속 */
+    overflow: hidden;
+}
+
+/* 오른쪽 메인 영역 (툴바 + 에디터) */
+.udm-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    /* Flexbox 버그 방지 */
+}
+
+/* 에디터 감싸는 래퍼 */
+#udm-content-wrapper {
+    flex: 1;
+    /* 남은 공간 모두 차지 */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    background: #1e1e1e;
+}
+
+/* 실제 텍스트 에디터 (textarea) */
+#udm-editor {
+    flex: 1;
+    /* 높이 100% 강제 */
+    height: 100% !important;
+    width: 100%;
+    background: #1e1e1e;
+    color: #e0e0e0;
+    border: none;
+    padding: 20px;
+    font-family: 'Consolas', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    resize: none;
+    /* 사용자 리사이즈 방지 (Flex로 자동 조절) */
+    outline: none;
+}
+
+/* 스크롤바 스타일링 */
+#udm-editor::-webkit-scrollbar {
+    width: 10px;
+}
+
+#udm-editor::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+#udm-editor::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 5px;
+}
+
+/* =========================================
+   FIX: Inspector & Timeline Visibility
+   ========================================= */
+
+/* 1. Inspector Panel 열림 강제 적용 */
+#inspector-panel.open {
+    bottom: 0 !important;
+    /* 화면 하단에 붙음 */
+    box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* 2. Timeline Sequence Box (회색 글씨 보이게 수정) */
+.seq-block {
+    overflow: hidden;
+    /* 넘치는 내용 숨김 */
+    background: rgba(255, 255, 255, 0.05);
+    /* 배경 살짝 깔아줌 */
+    border-radius: 4px;
+}
+
+.seq-info {
+    padding: 5px 8px;
+}
+
+.seq-title {
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--seq-line-color);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.seq-desc {
+    font-size: 11px;
+    color: #888;
+    /* 회색 */
+    line-height: 1.3;
+    white-space: normal !important;
+    /* 줄바꿈 허용 */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    /* 최대 2줄까지만 표시 */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* =========================================
+   FIX: Inspector & Settings Modal UI
+   ========================================= */
+
+/* --- 1. Settings Modal (Model Grid) --- */
+.model-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    /* 카드 자동 배치 */
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.model-card {
+    background: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 15px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.model-card:hover {
+    background: #252525;
+    transform: translateY(-2px);
+}
+
+.model-card.selected {
+    border-color: #3498db;
+    background: rgba(52, 152, 219, 0.1);
+    box-shadow: 0 0 10px rgba(52, 152, 219, 0.2);
+}
+
+.mc-name {
+    font-weight: bold;
+    color: #fff;
+    font-size: 14px;
+}
+
+.mc-desc {
+    font-size: 11px;
+    color: #888;
+    line-height: 1.4;
+}
+
+.mc-price {
+    font-size: 11px;
+    color: #2ecc71;
+    font-weight: bold;
+    margin-top: auto;
+    /* 하단 고정 */
+}
+
+/* --- 2. Inspector Panel (Plan A/B Selection) --- */
+.visual-plan-item {
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: 0.2s;
+    position: relative;
+}
+
+.visual-plan-item:hover {
+    background: #252525;
+}
+
+.visual-plan-item.selected {
+    border: 1px solid #3498db;
+    background: rgba(52, 152, 219, 0.05);
+}
+
+.visual-plan-item.selected::before {
+    content: '✔ Selected';
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 10px;
+    color: #3498db;
+    font-weight: bold;
+    background: rgba(52, 152, 219, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.plan-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.plan-radio {
+    accent-color: #3498db;
+    /* 라디오 버튼 색상 */
+    transform: scale(1.2);
+    cursor: pointer;
+}
+
+.plan-title {
+    font-weight: bold;
+    color: #eee;
+    font-size: 13px;
+}
+
+.plan-desc {
+    font-size: 12px;
+    color: #bbb;
+    line-height: 1.5;
+    padding-left: 24px;
+    /* 라디오 버튼 너비만큼 들여쓰기 */
+}
+
+/* Overlay & Resource Area */
+.inspector-section-title {
+    font-size: 11px;
+    font-weight: bold;
+    color: #888;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.overlay-box {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+==============================
+FILE PATH: .\public\js\main.js
+==============================
+// public/js/main.js
+import { db } from './modules/Database.js';
+import { ProjectManager } from './modules/ProjectManager.js';
+import { UIManager } from './modules/UIManager.js';
+import { UniversalDataManager } from './modules/UniversalDataManager.js';
+import { GitManager } from './modules/GitManager.js';
+import { ConveyorRenderer } from './modules/ConveyorRenderer.js';
+import { Inspector } from './modules/Inspector.js';
+import { TimelineRenderer } from './modules/TimelineRenderer.js';
+import { AiResultModal } from './modules/AiResultModal.js';
+
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("🚀 SFT Console V5.0 Booting...");
+
+    try {
+        await db.open();
+
+        // 1. 핵심 모듈 초기화
+        const gitMgr = new GitManager();
+        const uniDataMgr = new UniversalDataManager();
+        // 구형 UIManager는 호환성 위해 유지하되, 기능은 UniversalData로 위임
+        const uiMgr = new UIManager();
+
+        window.GitManagerInstance = gitMgr;
+        window.UniversalData = uniDataMgr;
+        window.UIManagerInstance = uiMgr;
+
+        // 2. 뷰 렌더러 초기화
+        const conveyor = new ConveyorRenderer();
+        window.ConveyorInstance = conveyor;
+
+        // 인스펙터 (저장 시 ProjectManager 저장 트리거)
+        const inspector = new Inspector(async () => {
+            if (window.ProjectMgrInstance) await window.ProjectMgrInstance.saveDirectorState();
+        });
+        window.InspectorInstance = inspector;
+
+        const projectMgr = new ProjectManager(conveyor, inspector);
+        window.ProjectMgrInstance = projectMgr;
+
+        const aiModal = new AiResultModal(projectMgr);
+        const timeline = new TimelineRenderer(inspector, aiModal);
+        window.TimelineRendererInstance = timeline;
+
+        // 3. 버튼 이벤트 연결
+        // (1) New Project
+        const btnNew = document.getElementById('btn-new-project');
+        if (btnNew) {
+            const newBtn = btnNew.cloneNode(true);
+            btnNew.parentNode.replaceChild(newBtn, btnNew);
+            newBtn.addEventListener('click', () => projectMgr.createNewProject());
+        }
+
+        // (2) Settings 버튼 (★ 여기가 빠져서 안 눌렸던 것)
+        const btnSettings = document.getElementById('btn-settings');
+        if (btnSettings) {
+            const newSetBtn = btnSettings.cloneNode(true);
+            btnSettings.parentNode.replaceChild(newSetBtn, btnSettings);
+            newSetBtn.addEventListener('click', () => {
+                // Universal Data Manager로 설정창 열기
+                uniDataMgr.open('global_settings', 'main_config', 'Global Settings');
+            });
+        }
+
+        // (3) Save Local
+        const btnSaveLocal = document.getElementById('btn-save-local');
+        if (btnSaveLocal) {
+            btnSaveLocal.addEventListener('click', () => alert("로컬 저장 기능은 준비 중입니다."));
+        }
+
+        // 4. 초기 데이터 로드
+        console.log("📂 Loading Project List...");
+        await projectMgr.loadProjectList();
+
+        // 5. 탭 전환 로직
+        const tabs = document.querySelectorAll('.tab-btn');
+        const sections = document.querySelectorAll('.view-section');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                sections.forEach(s => s.classList.remove('active'));
+
+                tab.classList.add('active');
+                const targetId = `view-${tab.dataset.target}`;
+                const targetEl = document.getElementById(targetId);
+                if (targetEl) targetEl.classList.add('active');
+
+                // 탭별 리프레시
+                if (tab.dataset.target === 'conveyor') conveyor.loadData();
+                if (tab.dataset.target === 'director') {
+                    setTimeout(() => timeline.fitTimeline(), 100);
+                }
+            });
+        });
+
+        console.log("✅ Boot Complete.");
+
+    } catch (err) {
+        console.error("🔥 FATAL ERROR:", err);
+        alert("초기화 중 오류 발생: " + err.message);
+    }
+});
+
+==============================
+FILE PATH: .\public\js\modules\AiResultModal.js
+==============================
+export class AiResultModal {
+    constructor(projectManager) {
+        this.pm = projectManager;
+        this.scene = null;
+        this.modal = document.createElement('div');
+        this.modal.className = 'modal-overlay';
+        this.modal.id = 'ai-result-modal';
+        this.initUI();
+        document.body.appendChild(this.modal);
+    }
+
+    initUI() {
+        this.modal.innerHTML = `
+            <div class="modal-box" style="width: 900px; height: 80%; background:#1e1e1e;">
+                <div class="modal-header">
+                    <span id="ai-modal-title" style="color:#2ecc71"><i class="fas fa-robot"></i> AI Micro-Actions</span>
+                    <button class="btn-icon" id="btn-close-ai"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="modal-body" style="display:flex; gap:20px; padding:20px;">
+                    <div style="flex:1; overflow-y:auto; padding-right:10px;">
+                        <h4 style="margin:0 0 10px 0; color:#aaa;">Preview</h4>
+                        <div id="ai-preview-container"></div>
+                    </div>
+                    <div style="flex:1; display:flex; flex-direction:column;">
+                        <h4 style="margin:0 0 10px 0; color:#aaa;">JSON Source</h4>
+                        <textarea id="ai-json-editor" class="ide-editor" style="flex:1; border:1px solid #333;"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn" id="btn-copy-ai"><i class="fas fa-copy"></i> Copy JSON</button>
+                    <button class="btn btn-primary" id="btn-save-ai">Save & Close</button>
+                </div>
+            </div>
+        `;
+
+        // Event Binding
+        this.modal.querySelector('#btn-close-ai').addEventListener('click', () => this.close());
+        this.modal.querySelector('#btn-save-ai').addEventListener('click', () => this.save());
+        this.modal.querySelector('#btn-copy-ai').addEventListener('click', () => this.copyJson());
+
+        // JSON 수정 시 Preview 실시간 갱신 (선택사항, 에러 방지 위해 blur 시 갱신 권장)
+        this.modal.querySelector('#ai-json-editor').addEventListener('blur', (e) => this.updatePreview(e.target.value));
+
+        // 배경 클릭 시 닫기 (자동 저장 포함)
+        this.modal.addEventListener('click', (e) => {
+            if (e.target === this.modal) this.save();
+        });
+    }
+
+    open(scene) {
+        if (!scene || !scene.ai_planning) return alert("AI 생성 데이터가 없습니다.");
+
+        this.scene = scene;
+        const jsonText = JSON.stringify(scene.ai_planning, null, 2);
+
+        this.modal.querySelector('#ai-modal-title').innerHTML = `<i class="fas fa-robot"></i> AI Plan: ${scene.formatted_id}`;
+        this.modal.querySelector('#ai-json-editor').value = jsonText;
+        this.updatePreview(jsonText);
+
+        this.modal.classList.add('open');
+        this.modal.style.display = 'flex';
+    }
+
+    close() {
+        this.modal.classList.remove('open');
+        this.modal.style.display = 'none';
+        this.scene = null;
+    }
+
+    updatePreview(jsonStr) {
+        try {
+            const data = JSON.parse(jsonStr);
+            const container = document.getElementById('ai-preview-container');
+            container.innerHTML = '';
+
+            // Plot Info
+            if (data.plot) {
+                container.innerHTML += `
+                    <div style="background:#252525; padding:10px; border-radius:6px; margin-bottom:10px;">
+                        <div style="color:var(--primary); font-weight:bold; font-size:12px;">Synopsis</div>
+                        <div style="font-size:12px; color:#ddd; margin-bottom:5px;">${data.plot.synopsis || '-'}</div>
+                        <div style="color:var(--accent); font-weight:bold; font-size:12px;">Metaphor</div>
+                        <div style="font-size:12px; color:#ddd;">${data.plot.metaphor || '-'}</div>
+                    </div>
+                `;
+            }
+
+            // Actions
+            (data.micro_actions || []).forEach(action => {
+                container.innerHTML += `
+                    <div style="background:#111; border:1px solid #333; padding:10px; margin-bottom:8px; border-radius:4px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <span style="font-weight:bold; color:#2ecc71; font-size:11px;">Action ${action.order}</span>
+                            <span style="color:#aaa; font-size:11px;">${action.tech_spec || ''}</span>
+                        </div>
+                        <div style="font-weight:bold; font-size:12px; margin-bottom:3px;">${action.title}</div>
+                        <div style="font-size:11px; color:#888; margin-bottom:5px;">🗣️ "${action.narration}"</div>
+                        <div style="font-size:11px; color:#ddd;">👁️ ${action.visual_direction}</div>
+                    </div>
+                `;
+            });
+
+        } catch (e) {
+            console.error("JSON Preview Error:", e);
+            document.getElementById('ai-preview-container').innerHTML = `<div style="color:red;">Invalid JSON</div>`;
+        }
+    }
+
+    save() {
+        if (!this.scene) return;
+        try {
+            const newJson = JSON.parse(document.getElementById('ai-json-editor').value);
+            this.scene.ai_planning = newJson; // 메모리 업데이트
+
+            // DB 자동 저장 요청
+            if (this.pm) this.pm.saveDirectorState();
+
+            console.log("✅ AI Plan Saved");
+            this.close();
+        } catch (e) {
+            alert("JSON 문법 오류! 저장할 수 없습니다.");
+        }
+    }
+
+    copyJson() {
+        const text = document.getElementById('ai-json-editor').value;
+        navigator.clipboard.writeText(text).then(() => {
+            alert("JSON Copied to Clipboard!");
+        });
+    }
+}
+
+==============================
+FILE PATH: .\public\js\modules\ConveyorRenderer.js
+==============================
+import { db } from './Database.js';
+
+// ★ 템플릿 ID와 아이콘 매핑 (Migration Pack 기준)
+const TOOL_ICONS = {
+    // [구조]
+    roadmap: "fa-map-signs",
+    list: "fa-list-ul",
+    table: "fa-table",
+    // [데이터]
+    chart_line: "fa-chart-line",
+    chart_bar: "fa-chart-bar",
+    chart_pie: "fa-chart-pie",
+    // [개념]
+    definition: "fa-book",
+    split_3: "fa-columns",
+    split_5: "fa-grip-horizontal",
+    card_hierarchy: "fa-sitemap",
+    pictogram: "fa-icons",
+    // [강조]
+    speech_bubble: "fa-comment-dots",
+    callout: "fa-bullseye",
+    big_title: "fa-heading",
+    mid_title: "fa-subscript",
+    // [행동]
+    display_explain: "fa-desktop",
+    prompt_input: "fa-keyboard",
+    action_animation: "fa-running",
+    // [기타]
+    default: "fa-cube"
+};
+
+export class ConveyorRenderer {
+    constructor() {
+        this.container = document.getElementById('conveyor-belt');
+    }
+
+    // 데이터 로드 및 렌더링 시작
+    loadData() {
+        if (!window.directorJson || !window.directorJson.sequences) return;
+        this.render();
+    }
+
+    render() {
+        this.container.innerHTML = ''; // 초기화
+        const json = window.directorJson;
+
+        json.sequences.forEach(seq => {
+            // 시퀀스 구분선 (선택 사항)
+            if (seq.scenes) {
+                seq.scenes.forEach(scene => {
+                    this.renderSceneCard(scene);
+                });
+            }
+        });
+    }
+
+    // ★ 핵심: 씬 카드 그리기
+    renderSceneCard(scene) {
+        const card = document.createElement('div');
+        card.className = 'scene-card';
+
+        // 클릭 이벤트: 인스펙터 열기
+        card.onclick = () => {
+            document.querySelectorAll('.scene-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            // 인스펙터가 존재하면 open 호출
+            if (window.InspectorInstance) window.InspectorInstance.open(scene);
+        };
+
+        // --- 1. 상태 및 스타일 결정 ---
+        const isRec = scene.is_screen_rec === true;
+        const toolData = scene.tool_control || {};
+        const expData = scene.experience_track || {};
+        const hasExp = expData.has_experience === true;
+        const hasAiPlan = scene.visual_plans && scene.visual_plans.length > 0;
+
+        // 테두리 색상 로직
+        if (isRec) {
+            card.style.borderLeft = "4px solid #e74c3c"; // Red (녹화)
+            card.style.background = "#2c1a1a"; // 약간 붉은 배경
+        } else if (hasExp) {
+            card.style.borderLeft = "4px solid #9b59b6"; // Purple (체험)
+            card.style.background = "#2a202e"; // 약간 보라 배경
+        } else if (hasAiPlan) {
+            card.style.borderLeft = "4px solid #3498db"; // Blue (AI 완료)
+            card.style.background = "#202830"; // 기본 어두운 배경
+        } else {
+            card.style.borderLeft = "4px solid #555"; // Grey (미완성)
+        }
+
+        // --- 2. 뱃지 & 아이콘 생성 ---
+        let badgeHtml = "";
+        let mainIconClass = "fa-circle"; // 기본값
+        let toolName = "";
+
+        if (isRec) {
+            // [녹화 씬]
+            mainIconClass = "fa-video";
+            badgeHtml += `<span style="color:#e74c3c; font-weight:bold; font-size:11px;"> REC</span>`;
+        } else {
+            // [일반 씬] 1순위 툴 아이콘 찾기
+            if (toolData.ranked_tools && toolData.ranked_tools.length > 0) {
+                const topToolId = toolData.ranked_tools[0].tool_id;
+                mainIconClass = TOOL_ICONS[topToolId] || TOOL_ICONS.default;
+                toolName = topToolId;
+
+                // 툴 아이콘 뱃지
+                badgeHtml += `<span style="color:#f39c12; margin-right:6px;" title="Tool: ${topToolId}">
+                    <i class="fas ${mainIconClass}"></i>
+                </span>`;
+            } else {
+                // 툴 정보 없음
+                badgeHtml += `<span style="color:#777;"><i class="fas fa-question-circle"></i></span>`;
+            }
+
+            // 체험(EXP) 뱃지
+            if (hasExp) {
+                badgeHtml += `<span style="background:#8e44ad; color:white; font-size:9px; padding:1px 4px; border-radius:3px; margin-left:4px;">EXP</span>`;
+            }
+        }
+
+        // --- 3. 텍스트 미리보기 ---
+        const narr = (scene.narrations || [])[0] || "(내레이션 없음)";
+        let subText = "";
+
+        if (isRec) {
+            subText = "Screen Recording Scene";
+        } else {
+            // 툴 이름 or 노트 표시
+            if (toolName) subText += `<span style="color:#f39c12;">[${toolName}]</span> `;
+            if (toolData.notes) subText += toolData.notes;
+        }
+
+        // HTML 조립
+        card.innerHTML = `
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span class="scene-id" style="font-weight:bold; color:#eee; font-size:13px;">${scene.formatted_id}</span>
+                <div class="badges">${badgeHtml}</div>
+            </div>
+            <div class="card-body">
+                <div class="narr-preview" style="font-size:12px; color:#ccc; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    "${narr}"
+                </div>
+                <div class="info-preview" style="font-size:10px; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    ${subText}
+                </div>
+            </div>
+        `;
+
+        this.container.appendChild(card);
+    }
+}
+
+==============================
+FILE PATH: .\public\js\modules\Database.js
+==============================
+// public/js/modules/Database.js
+const Dexie = window.Dexie;
+
+class Database extends Dexie {
+    constructor() {
+        super("SFT_Console_DB_v6");
+
+        // v1 ~ v3 History (유지)
+        this.version(1).stores({ projects: '++id, title, updatedAt', stage_data: '[pid+stage+type], pid, updatedAt' });
+        this.version(2).stores({
+            projects: '++id, title, updatedAt', stage_data: '[pid+stage+type], pid, updatedAt',
+            global_settings: 'id', system_prompts: 'id', version_history: '++id, [target_type+target_id], label, timestamp'
+        });
+        this.version(3).stores({
+            projects: '++id, title, updatedAt', stage_data: '[pid+stage+type], pid, updatedAt',
+            global_settings: 'id', system_prompts: 'id', version_history: '++id, [target_type+target_id], label, timestamp',
+            ai_plans: '++id, [project_id+scene_id], scene_type, version, created_at'
+        });
+
+        // ★ v4 (New: 딥러닝 확장 기초 공사)
+        // ai_plans 테이블에 'scene_tag' 인덱스 추가 (추후 "유사한 씬 찾기" 기능에 사용)
+        // 참고: vector, evaluation 같은 객체 데이터는 별도 인덱스 정의 없이도 저장 가능합니다.
+        this.version(4).stores({
+            projects: '++id, title, updatedAt',
+            stage_data: '[pid+stage+type], pid, updatedAt',
+            global_settings: 'id',
+            system_prompts: 'id',
+            version_history: '++id, [target_type+target_id], label, timestamp',
+            ai_plans: '++id, [project_id+scene_id], scene_type, version, created_at, scene_tag'
+        });
+
+        this.stage_data = this.table("stage_data");
+        this.projects = this.table("projects");
+        this.global_settings = this.table("global_settings");
+        this.system_prompts = this.table("system_prompts");
+        this.version_history = this.table("version_history");
+        this.ai_plans = this.table("ai_plans");
+    }
+
+    async open() {
+        await super.open();
+        try {
+            const config = await this.global_settings.get('main_config');
+            if (!config) await this.global_settings.put({ id: 'main_config', updatedAt: Date.now() });
+        } catch (e) { console.warn("DB Defaults skipped"); }
+        console.log("✅ DB Connected (Schema v4: Vector Ready)");
+    }
+}
+
+export const db = new Database();
+
+==============================
+FILE PATH: .\public\js\modules\EditorModal.js
+==============================
+import { db } from './Database.js';
+
+export class EditorModal {
+    constructor(projectManager) {
+        this.pm = projectManager;
+        this.modal = document.getElementById('editor-modal');
+        this.textarea = document.getElementById('modal-textarea');
+        this.titleEl = document.getElementById('modal-title');
+
+        // 전역 접근 허용 (HTML onclick="openEditor()" 대응)
+        window.EditorModal = this;
+    }
+
+    async open(stage, type) {
+        if (!window.currPid) return alert("프로젝트를 먼저 생성하고 선택해주세요.");
+
+        this.currentContext = { stage, type };
+        this.titleEl.innerText = `Edit: ${stage} / ${type}`;
+
+        // DB 로드
+        const key = [window.currPid, stage, type];
+        const data = await db.stage_data.get(key);
+        this.textarea.value = data ? data.current : "";
+
+        // 모달 보이기 (CSS 클래스 + 스타일 강제)
+        this.modal.classList.add('open');
+        this.modal.style.display = 'flex';
+    }
+
+    close() {
+        this.modal.style.display = 'none';
+        this.modal.classList.remove('open');
+    }
+
+    async save() {
+        if (!this.currentContext) return;
+        const { stage, type } = this.currentContext;
+        const content = this.textarea.value;
+
+        // DB 저장 로직
+        const key = [window.currPid, stage, type];
+        let record = await db.stage_data.get(key) || { pid: window.currPid, stage, type, history: [] };
+
+        record.current = content;
+        record.updatedAt = Date.now();
+        await db.stage_data.put(record);
+
+        // UI 갱신 요청
+        if (this.pm) this.pm.updateDashboardStatus();
+        this.close();
+    }
+}
+
+==============================
+FILE PATH: .\public\js\modules\GitManager.js
+==============================
+// public/js/modules/GitManager.js
+export class GitManager {
+    constructor() {
+        console.log("✅ GitManager initialized");
+    }
+
+    renderForm(key, container) {
+        if (!container) return;
+        const keyDisplay = Array.isArray(key) ? key.join(' / ') : (key || 'No Key');
+
+        container.innerHTML = `
+            <div style="text-align:center; padding:20px; color:#666;">
+                <i class="fab fa-github" style="font-size:30px; margin-bottom:10px;"></i>
+                <p>GitHub Sync is ready.</p>
+                <div style="font-size:11px; margin-top:5px; padding: 4px; background: #222; border-radius: 4px; display: inline-block;">
+                   Target: <span style="color: #4cd137;">${keyDisplay}</span>
+                </div>
+            </div>
+        `;
+    }
+}
+
+==============================
+FILE PATH: .\public\js\modules\Inspector.js
+==============================
+// 템플릿 ID와 사람이 읽을 수 있는 이름 매핑
+const TOOL_NAMES = {
+    // [구조]
+    roadmap: "로드맵 (단계/흐름)",
+    list: "리스트 (목록)",
+    table: "표 (비교/대조)",
+    // [데이터]
+    chart_line: "라인 차트 (추이)",
+    chart_bar: "막대 차트 (순위/비교)",
+    chart_pie: "원형 차트 (비율)",
+    // [개념]
+    definition: "단어 설명 (정의)",
+    split_3: "3분할 (3요소)",
+    split_5: "5분할 (5요소)",
+    card_hierarchy: "카드 분류 (계층)",
+    pictogram: "픽토그램 (상징)",
+    // [강조]
+    speech_bubble: "말풍선 (핵심/질문)",
+    callout: "콜아웃 (포커스)",
+    big_title: "빅 타이틀 (주제)",
+    mid_title: "미드 타이틀 (전환)",
+    // [행동]
+    display_explain: "디스플레이 (자료화면)",
+    prompt_input: "프롬프트 입력 (타이핑)",
+    action_animation: "액션 애니메이션 (이동/변화)"
+};
+
+export class Inspector {
+    constructor() {
+        this.container = document.getElementById('inspector-panel'); // HTML에 이 ID를 가진 div가 있어야 함
+        this.currentScene = null;
+    }
+
+    // 외부에서 호출하는 메서드
+    open(scene) {
+        this.currentScene = scene;
+        this.render();
+    }
+
+    render() {
+        if (!this.container) return;
+        this.container.innerHTML = '';
+
+        if (!this.currentScene) {
+            this.container.innerHTML = `<div style="padding:20px; color:#666;">씬을 선택해주세요.</div>`;
+            return;
+        }
+
+        const scene = this.currentScene;
+        const isRec = scene.is_screen_rec === true;
+
+        // --- 헤더 (ID & 나레이션) ---
+        const header = document.createElement('div');
+        header.style.padding = "15px";
+        header.style.borderBottom = "1px solid #444";
+        header.innerHTML = `
+            <div style="font-size:18px; font-weight:bold; color:#fff; margin-bottom:5px;">
+                ${scene.formatted_id} 
+                ${isRec ? '<span style="color:#e74c3c; font-size:12px;">(Screen Rec)</span>' : ''}
+            </div>
+            <div style="font-size:12px; color:#aaa; line-height:1.4; max-height:60px; overflow-y:auto;">
+                ${(scene.narrations || []).join(" ")}
+            </div>
+        `;
+        this.container.appendChild(header);
+
+        // --- 녹화 씬이면 편집 불가 처리 ---
+        if (isRec) {
+            const notice = document.createElement('div');
+            notice.style.padding = "20px";
+            notice.style.color = "#e74c3c";
+            notice.style.textAlign = "center";
+            notice.innerHTML = `<i class="fas fa-video" style="font-size:24px; margin-bottom:10px;"></i><br>화면 녹화 씬은 AI 연출 대상이 아닙니다.`;
+            this.container.appendChild(notice);
+            return;
+        }
+
+        // --- 일반 씬 편집 UI ---
+        const body = document.createElement('div');
+        body.style.padding = "15px";
+        body.style.overflowY = "auto";
+        body.style.height = "calc(100% - 100px)";
+
+        // 1. Vector Control (간단한 슬라이더 구현)
+        body.appendChild(this.renderVectorUI(scene));
+
+        // 2. Tool Control (템플릿 선택)
+        body.appendChild(this.renderToolUI(scene));
+
+        // 3. Visual Plans (연출 묘사)
+        body.appendChild(this.renderVisualPlansUI(scene));
+
+        // 4. Asset Advice (에셋 전략)
+        body.appendChild(this.renderAssetUI(scene));
+
+        // 5. Experience Track (체험)
+        body.appendChild(this.renderExperienceUI(scene));
+
+        this.container.appendChild(body);
+    }
+
+    // --- UI 컴포넌트 메서드들 ---
+
+    renderVectorUI(scene) {
+        const wrap = document.createElement('div');
+        wrap.className = "inspector-section";
+        wrap.innerHTML = `<h4 style="color:#3498db; margin-bottom:10px; font-size:13px;">1. Scene Vector (뉘앙스)</h4>`;
+
+        const vec = scene.scene_control?.vector || { emotion: 0.5, pace: 0.5, information: 0.5 };
+
+        ['emotion', 'pace', 'information'].forEach(key => {
+            const row = document.createElement('div');
+            row.style.marginBottom = "5px";
+            row.style.display = "flex";
+            row.style.alignItems = "center";
+            row.innerHTML = `
+                <span style="width:70px; font-size:11px; color:#ccc;">${key.charAt(0).toUpperCase() + key.slice(1)}</span>
+                <input type="range" min="0.1" max="1.0" step="0.1" value="${vec[key]}" style="flex:1;">
+                <span style="width:30px; font-size:11px; text-align:right; color:#fff;">${vec[key]}</span>
+            `;
+            // 이벤트 리스너: 값 변경 시 메모리 업데이트
+            row.querySelector('input').addEventListener('input', (e) => {
+                vec[key] = parseFloat(e.target.value);
+                row.querySelector('span:last-child').innerText = vec[key];
+                if (scene.scene_control) scene.scene_control.source = "manual"; // 수정됨 표시
+            });
+            wrap.appendChild(row);
+        });
+        return wrap;
+    }
+
+    renderToolUI(scene) {
+        const wrap = document.createElement('div');
+        wrap.className = "inspector-section";
+        wrap.style.marginTop = "20px";
+        wrap.innerHTML = `<h4 style="color:#f39c12; margin-bottom:10px; font-size:13px;">2. Tool Control (템플릿)</h4>`;
+
+        const toolData = scene.tool_control || { ranked_tools: [], notes: "" };
+        const ranks = toolData.ranked_tools || [];
+
+        // 1~3순위 셀렉트 박스 생성 함수
+        const createSelect = (rankIdx) => {
+            const currentToolId = ranks.find(r => r.rank === rankIdx + 1)?.tool_id || "";
+            const select = document.createElement('select');
+            select.style.width = "100%";
+            select.style.marginBottom = "5px";
+            select.style.background = "#222";
+            select.style.color = "#eee";
+            select.style.border = "1px solid #444";
+
+            let html = `<option value="">(${rankIdx + 1}순위 선택 안함)</option>`;
+            for (const [id, name] of Object.entries(TOOL_NAMES)) {
+                html += `<option value="${id}" ${id === currentToolId ? 'selected' : ''}>${rankIdx + 1}. ${name}</option>`;
+            }
+            select.innerHTML = html;
+
+            select.addEventListener('change', (e) => {
+                // 기존 랭크 제거 후 새 값 추가
+                const newId = e.target.value;
+                toolData.ranked_tools = toolData.ranked_tools.filter(r => r.rank !== rankIdx + 1);
+                if (newId) {
+                    toolData.ranked_tools.push({ tool_id: newId, rank: rankIdx + 1, reason: "Manual Select" });
+                    toolData.ranked_tools.sort((a, b) => a.rank - b.rank);
+                }
+                toolData.source = "manual";
+                // 컨베이어 벨트의 아이콘 업데이트를 위해 리로드 필요 (여기선 생략하거나 이벤트 발생)
+            });
+            return select;
+        };
+
+        wrap.appendChild(createSelect(0)); // 1순위
+        wrap.appendChild(createSelect(1)); // 2순위
+
+        // 노트 입력
+        const noteInput = document.createElement('textarea');
+        noteInput.placeholder = "템플릿 사용 가이드 (Note)";
+        noteInput.style.width = "100%";
+        noteInput.style.height = "50px";
+        noteInput.style.background = "#222";
+        noteInput.style.color = "#eee";
+        noteInput.style.border = "1px solid #444";
+        noteInput.style.marginTop = "5px";
+        noteInput.value = toolData.notes || "";
+        noteInput.addEventListener('change', (e) => {
+            toolData.notes = e.target.value;
+            toolData.source = "manual";
+        });
+        wrap.appendChild(noteInput);
+
+        return wrap;
+    }
+
+    renderVisualPlansUI(scene) {
+        const wrap = document.createElement('div');
+        wrap.className = "inspector-section";
+        wrap.style.marginTop = "20px";
+        wrap.innerHTML = `<h4 style="color:#2ecc71; margin-bottom:10px; font-size:13px;">3. Visual Plans (연출 묘사)</h4>`;
+
+        const plans = scene.visual_plans || [
+            { priority: 1, name: "Plan A", description: "" },
+            { priority: 2, name: "Plan B", description: "" }
+        ];
+
+        plans.forEach((plan, idx) => {
+            const planDiv = document.createElement('div');
+            planDiv.style.marginBottom = "10px";
+            planDiv.innerHTML = `
+                <div style="font-size:11px; color:#888; margin-bottom:2px;">Priority ${plan.priority} (${idx === 0 ? 'High-End' : 'Light'})</div>
+                <input type="text" value="${plan.name || ''}" placeholder="Title" style="width:100%; background:#333; border:none; color:#fff; font-size:12px; padding:2px; margin-bottom:2px;">
+                <textarea style="width:100%; height:60px; background:#222; border:1px solid #444; color:#ccc; font-size:11px;">${plan.description || ''}</textarea>
+            `;
+
+            // 이벤트 연결
+            const titleInput = planDiv.querySelector('input');
+            const descInput = planDiv.querySelector('textarea');
+
+            titleInput.addEventListener('change', (e) => plan.name = e.target.value);
+            descInput.addEventListener('change', (e) => plan.description = e.target.value);
+
+            wrap.appendChild(planDiv);
+        });
+
+        return wrap;
+    }
+
+    renderAssetUI(scene) {
+        const wrap = document.createElement('div');
+        wrap.className = "inspector-section";
+        wrap.style.marginTop = "20px";
+        wrap.innerHTML = `<h4 style="color:#e67e22; margin-bottom:10px; font-size:13px;">4. Asset Advice</h4>`;
+
+        const asset = scene.asset_advice || { type: "Stock_Search", content: "" };
+
+        // Type Select
+        const typeSel = document.createElement('select');
+        typeSel.style.width = "100%";
+        typeSel.style.marginBottom = "5px";
+        typeSel.innerHTML = `
+            <option value="Stock_Search" ${asset.type === 'Stock_Search' ? 'selected' : ''}>Stock Search</option>
+            <option value="Gen_AI_Image" ${asset.type === 'Gen_AI_Image' ? 'selected' : ''}>Gen AI Image</option>
+            <option value="Gen_AI_Video" ${asset.type === 'Gen_AI_Video' ? 'selected' : ''}>Gen AI Video</option>
+        `;
+        typeSel.addEventListener('change', (e) => {
+            if (!scene.asset_advice) scene.asset_advice = {};
+            scene.asset_advice.type = e.target.value;
+        });
+        wrap.appendChild(typeSel);
+
+        // Content Input
+        const contentInput = document.createElement('textarea');
+        contentInput.placeholder = "프롬프트 또는 검색어";
+        contentInput.style.width = "100%";
+        contentInput.style.height = "50px";
+        contentInput.style.background = "#222";
+        contentInput.style.color = "#ccc";
+        contentInput.value = asset.content || "";
+        contentInput.addEventListener('change', (e) => {
+            if (!scene.asset_advice) scene.asset_advice = { type: "Stock_Search" };
+            scene.asset_advice.content = e.target.value;
+        });
+        wrap.appendChild(contentInput);
+
+        return wrap;
+    }
+
+    renderExperienceUI(scene) {
+        const wrap = document.createElement('div');
+        wrap.className = "inspector-section";
+        wrap.style.marginTop = "20px";
+        wrap.innerHTML = `<h4 style="color:#9b59b6; margin-bottom:10px; font-size:13px;">5. Experience Track (체험)</h4>`;
+
+        const hasExp = scene.experience_track && scene.experience_track.has_experience;
+
+        // Toggle Switch
+        const toggleDiv = document.createElement('div');
+        toggleDiv.style.marginBottom = "10px";
+        toggleDiv.innerHTML = `
+            <label style="color:#eee; font-size:12px; display:flex; align-items:center;">
+                <input type="checkbox" id="exp-toggle" ${hasExp ? 'checked' : ''}>
+                <span style="margin-left:5px;">체험 요소 활성화</span>
+            </label>
+        `;
+        wrap.appendChild(toggleDiv);
+
+        // Detail Form (Hidden by default)
+        const detailDiv = document.createElement('div');
+        detailDiv.style.display = hasExp ? "block" : "none";
+        detailDiv.style.borderLeft = "2px solid #9b59b6";
+        detailDiv.style.paddingLeft = "10px";
+
+        const exp = scene.experience_track || { title: "", interaction_type: "", guide: "" };
+
+        detailDiv.innerHTML = `
+            <input type="text" id="exp-title" placeholder="체험 제목" value="${exp.title || ''}" style="width:100%; margin-bottom:5px; background:#333; color:#fff; border:none;">
+            <input type="text" id="exp-type" placeholder="Type (Click, Drag...)" value="${exp.interaction_type || ''}" style="width:100%; margin-bottom:5px; background:#333; color:#fff; border:none;">
+            <textarea id="exp-guide" placeholder="사용자 가이드" style="width:100%; height:40px; background:#222; color:#ccc;">${exp.guide || ''}</textarea>
+        `;
+        wrap.appendChild(detailDiv);
+
+        // Event Logic
+        const checkbox = toggleDiv.querySelector('input');
+        checkbox.addEventListener('change', (e) => {
+            const checked = e.target.checked;
+            detailDiv.style.display = checked ? "block" : "none";
+
+            if (checked) {
+                if (!scene.experience_track) scene.experience_track = { has_experience: true, title: "", interaction_type: "", guide: "" };
+                else scene.experience_track.has_experience = true;
+            } else {
+                scene.experience_track = null; // 끄면 데이터 삭제 (혹은 has_experience: false)
+            }
+            // 컨베이어 벨트의 EXP 뱃지 갱신을 위해 리렌더링 필요
+        });
+
+        // Detail Inputs update
+        detailDiv.querySelectorAll('input, textarea').forEach(el => {
+            el.addEventListener('change', (e) => {
+                if (scene.experience_track) {
+                    if (el.id === 'exp-title') scene.experience_track.title = e.target.value;
+                    if (el.id === 'exp-type') scene.experience_track.interaction_type = e.target.value;
+                    if (el.id === 'exp-guide') scene.experience_track.guide = e.target.value;
+                }
+            });
+        });
+
+        return wrap;
+    }
+}
+
+==============================
+FILE PATH: .\public\js\modules\ProjectManager.js
+==============================
+import { db } from './Database.js';
+
+// 템플릿 자동 추천을 위한 키워드 맵 (Stage 2 AI가 못 했을 때 대비용 Fallback)
+const TOOL_CATALOG = {
+    roadmap: { keywords: /스텝|단계|과정|흐름|로드맵|순서|따라/ },
+    list: { keywords: /첫째|둘째|셋째|목록|리스트|가지|나열/ },
+    table: { keywords: /비교|대조|표|vs|차이|장단점/ },
+    chart_line: { keywords: /변화|추이|상승|하락|증가|감소|선|연도|흐름|급격/ },
+    chart_bar: { keywords: /막대|그래프|차트|비교|높|낮|순위|가장|vs/ },
+    chart_pie: { keywords: /비율|퍼센트|%|점유율|원형|비중|구성|차지/ },
+    definition: { keywords: /정의|뜻|개념|이란|용어/ },
+    speech_bubble: { keywords: /질문|생각|대사|말|혹시/ },
+    split_3: { keywords: /세 가지|3가지|3개|분류/ },
+    split_5: { keywords: /다섯|5가지|5개|요소/ },
+    display_explain: { keywords: /화면|디스플레이|자료|영상/ },
+    card_hierarchy: { keywords: /카드|그룹|종류|포함/ },
+    action_animation: { keywords: /행동|움직|변화|애니메이션/ },
+    pictogram: { keywords: /아이콘|그림|상징|모양/ },
+    callout: { keywords: /여기|주목|강조|부분|포인트/ },
+    prompt_input: { keywords: /입력|타이핑|검색|치면|작성/ },
+    big_title: { keywords: /주제|제목|시작|인트로|오늘/ },
+    mid_title: { keywords: /챕터|섹션|다음|넘어|이어서/ }
+};
+
+export class ProjectManager {
+    constructor(conveyorRenderer, inspector) {
+        this.conveyor = conveyorRenderer;
+        this.inspector = inspector;
+        this.currentProjectId = null;
+        this.listContainer = document.getElementById('project-list');
+    }
+
+    // ... (createNewProject, loadProjectList 등 기존 코드 유지) ...
+    // 만약 기존 코드가 없다면 요청주세요. 핵심은 loadDirectorState 입니다.
+
+    // 1. 벡터 계산 (Fallback)
+    calculateDefaultVector(narrations) {
+        const text = (narrations || []).join(" ");
+        let vec = { emotion: 0.3, pace: 0.5, information: 0.4 };
+
+        if (text.match(/원리|구조|정의|개념|학습|설명/)) vec.information += 0.4;
+        if (text.match(/안녕하세요|반갑습니다|환영합니다/)) { vec.emotion = 0.2; vec.pace = 0.4; vec.information = 0.2; }
+        if (text.match(/놀랍|중요|핵심|기억|위험/)) vec.emotion += 0.4;
+        if (text.match(/빠르게|순식간|바로|자,|그럼/)) vec.pace += 0.3;
+
+        const clamp = (n) => parseFloat(Math.min(Math.max(n, 0.1), 0.9).toFixed(2));
+        return { emotion: clamp(vec.emotion), pace: clamp(vec.pace), information: clamp(vec.information) };
+    }
+
+    // 2. 툴 추천 (Fallback)
+    calculateDefaultTools(narrations) {
+        const text = (narrations || []).join(" ");
+        const candidates = [];
+        for (const [id, info] of Object.entries(TOOL_CATALOG)) {
+            if (text.match(info.keywords)) {
+                candidates.push({ tool_id: id, rank: 0, reason: "Keyword Match" });
+            }
+        }
+        // 최대 2개 추천
+        const ranked = candidates.slice(0, 2).map((item, index) => ({ ...item, rank: index + 1 }));
+        return {
+            source: ranked.length > 0 ? "auto_rule_fallback" : "default",
+            ranked_tools: ranked,
+            notes: ""
+        };
+    }
+
+    // ★ 핵심 로직: JSON 로드 및 하이브리드 보정
+    async loadDirectorState() {
+        if (!this.currentProjectId) return;
+        const data = await db.stage_data.get({ pid: this.currentProjectId, stage: 's2', type: 'json' });
+
+        if (!data || !data.current || data.current === "{}" || data.current.length < 5) {
+            console.warn("Director Input Data Empty");
+            return;
+        }
+
+        try {
+            let json = JSON.parse(data.current);
+            let isModified = false;
+
+            if (json.sequences && Array.isArray(json.sequences)) {
+                for (const seq of json.sequences) {
+                    if (!seq.scenes) continue;
+                    for (const scene of seq.scenes) {
+
+                        // [Rule 1] 화면 녹화 씬은 건너뜀 (데이터 불필요)
+                        if (scene.is_screen_rec === true) {
+                            continue;
+                        }
+
+                        // [Rule 2] Vector가 없으면 채워넣음
+                        if (!scene.scene_control) {
+                            scene.scene_control = {
+                                vector: this.calculateDefaultVector(scene.narrations),
+                                source: "fallback_auto"
+                            };
+                            isModified = true;
+                        }
+
+                        // [Rule 3] Tool Control이 없으면 채워넣음 (있으면 유지!)
+                        if (!scene.tool_control) {
+                            scene.tool_control = this.calculateDefaultTools(scene.narrations);
+                            console.log(`🛠 Fallback Tools for [${scene.formatted_id}]`);
+                            isModified = true;
+                        }
+
+                        // [Rule 4] Visual Plans가 없으면 기본 뼈대 생성 (있으면 유지!)
+                        if (!scene.visual_plans || scene.visual_plans.length === 0) {
+                            scene.visual_plans = [
+                                { priority: 1, name: "Plan A", description: "No description yet." },
+                                { priority: 2, name: "Plan B", description: "No description yet." }
+                            ];
+                            isModified = true;
+                        }
+                    }
+                }
+            }
+
+            // 수정사항이 있으면 DB 업데이트 (Fallback 저장)
+            if (isModified) {
+                await db.stage_data.put({
+                    pid: this.currentProjectId, stage: 's2', type: 'json',
+                    current: JSON.stringify(json, null, 2), updatedAt: new Date().toISOString()
+                });
+                console.log("✅ Data Loaded & Missing Parts Filled (Hybrid Logic).");
+            }
+
+            // 전역 변수에 저장 및 렌더링
+            window.directorJson = json;
+
+            // 컨베이어 및 인스펙터 갱신
+            if (this.conveyor) this.conveyor.loadData();
+            // 타임라인 렌더러가 있다면 갱신 (선택사항)
+            if (window.TimelineRendererInstance) window.TimelineRendererInstance.render();
+
+        } catch (e) {
+            console.error(e);
+            alert("JSON Load Error: " + e.message);
+        }
+    }
+
+    // ... (saveDirectorState 등 기존 메서드 유지) ...
+}
+
+==============================
+FILE PATH: .\public\js\modules\TimelineRenderer.js
+==============================
+export class TimelineRenderer {
+    constructor(inspector, aiModal) {
+        this.inspector = inspector;
+        this.aiModal = aiModal;
+        this.container = document.getElementById('track-content');
+        this.ruler = document.getElementById('timeline-ruler');
+        this.zoomSlider = document.getElementById('zoom-slider');
+
+        this.zoom = 5;
+        this.CHARS_PER_SECOND = 7000 / 1200;
+        this.totalDuration = 0;
+
+        this.START_OFFSET = 20;
+        this.GAP_SIZE = 30;
+        this.TRACK_SCENE_Y = 80; // ★ 씬 트랙 위치 조금 내림 (시퀀스 설명 공간 확보)
+        this.TRACK_EXP_Y = 135;
+        this.TRACK_AI_STD_Y = 240;
+        this.TRACK_AI_EXP_Y = 275;
+
+        this.initEvents();
+    }
+
+    initEvents() {
+        this.zoomSlider?.addEventListener('input', (e) => {
+            this.zoom = parseFloat(e.target.value);
+            this.render();
+        });
+        const trackArea = document.getElementById('track-area');
+        if (trackArea) {
+            trackArea.addEventListener('scroll', () => {
+                if (this.ruler) this.ruler.style.transform = `translateX(-${trackArea.scrollLeft}px)`;
+            });
+            trackArea.addEventListener('wheel', (e) => {
+                if (e.ctrlKey) {
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                    this.zoom = Math.max(0.2, Math.min(13, this.zoom * delta));
+                    if (this.zoomSlider) this.zoomSlider.value = this.zoom;
+                    this.render();
+                }
+            });
+        }
+    }
+
+    // ★ [핵심 수정] Fit Timeline 기능 강화
+    fitTimeline() {
+        const trackArea = document.getElementById('track-area');
+        if (!trackArea || !window.directorJson) return;
+
+        // 1. 전체 시간 다시 계산
+        this.calculateTotalDuration();
+        if (this.totalDuration <= 0) return;
+
+        // 2. 화면 너비에 맞춰 줌 레벨 계산
+        const seqCount = window.directorJson.sequences ? window.directorJson.sequences.length : 0;
+        const totalGapPixels = seqCount * this.GAP_SIZE;
+        const availableWidth = trackArea.clientWidth - this.START_OFFSET - totalGapPixels - 50; // 여백 50px
+
+        let newZoom = availableWidth / this.totalDuration;
+
+        // 3. 줌 레벨 제한 및 적용
+        this.zoom = Math.max(0.2, Math.min(13, newZoom));
+        if (this.zoomSlider) this.zoomSlider.value = this.zoom;
+
+        // 4. ★ 반드시 다시 그려야 함
+        this.render();
+        console.log(`Timeline Fitted: Duration=${this.totalDuration}s, Zoom=${this.zoom}`);
+    }
+
+    render() {
+        if (!window.directorJson) return;
+        this.container.innerHTML = '';
+        this.calculateTotalDuration();
+        this.renderRuler();
+
+        let currentLeft = this.START_OFFSET;
+        (window.directorJson.sequences || []).forEach((seq) => {
+            const seqStartPos = currentLeft;
+            let seqDurationPixels = 0;
+
+            (seq.scenes || []).forEach(scene => {
+                let charCount = 0;
+                if (scene.narrations) scene.narrations.forEach(n => charCount += n.length);
+                const durSec = Math.max(1, charCount / this.CHARS_PER_SECOND);
+                const width = durSec * this.zoom;
+                seqDurationPixels += width;
+
+                this.renderClip(scene, currentLeft, width, 'scene');
+                if (scene.experience_track && scene.experience_track.has_experience) {
+                    this.renderClip(scene, currentLeft, width, 'exp');
+                }
+                if (scene.ai_planning) this.renderClip(scene, currentLeft, width, 'ai_std');
+                if (scene.ai_planning_exp) this.renderClip(scene, currentLeft, width, 'ai_exp');
+
+                currentLeft += width + 2;
+            });
+
+            // ★ [핵심 수정] 시퀀스 박스 높이 증가 및 설명 텍스트 표시
+            const seqBlock = document.createElement('div');
+            seqBlock.className = 'seq-block';
+            // height: 60px로 늘려서 설명이 보이게 함
+            seqBlock.style.cssText = `position:absolute; top:10px; left:${seqStartPos}px; width:${seqDurationPixels}px; height:60px; border-top:3px solid var(--seq-line-color);`;
+
+            // 데이터 필드 확인 (plot_popup이 없으면 description 사용)
+            const descText = seq.plot_popup || seq.description || seq.synopsis || '';
+
+            seqBlock.innerHTML = `
+                <div class="seq-info">
+                    <div class="seq-title">${seq.title}</div>
+                    <div class="seq-desc">${descText}</div>
+                </div>
+            `;
+            this.container.appendChild(seqBlock);
+
+            currentLeft += this.GAP_SIZE;
+        });
+        this.container.style.width = `${currentLeft + 100}px`;
+    }
+
+    renderClip(scene, left, width, type) {
+        const clip = document.createElement('div');
+        clip.className = 'track-clip';
+        clip.style.left = `${left}px`;
+        clip.style.width = `${width}px`;
+        clip.style.position = 'absolute';
+        clip.style.cursor = 'pointer';
+
+        if (type === 'scene') {
+            clip.style.top = `${this.TRACK_SCENE_Y}px`;
+            clip.style.height = '50px';
+            clip.style.border = '1px solid #777';
+            clip.style.background = '#3498db';
+            clip.innerHTML = `
+                <div style="padding:4px; color:white; font-size:11px; font-weight:bold; display:flex; justify-content:space-between;">
+                    <span>${scene.formatted_id}</span>
+                </div>
+                <div style="padding:0 4px; font-size:9px; color:#ddd; overflow:hidden; white-space:nowrap;">
+                    ${(scene.narrations || [])[0] || ''}
+                </div>
+            `;
+
+            // ★ 인스펙터 호출 로직 강화
+            clip.onclick = (e) => {
+                e.stopPropagation();
+                // 전역 인스턴스 우선 사용
+                const ins = window.InspectorInstance || this.inspector;
+                if (ins) {
+                    console.log("Opening Inspector for:", scene.formatted_id);
+                    ins.open(scene);
+                } else {
+                    alert("Inspector module not loaded.");
+                }
+            };
+        }
+        // ... (나머지 exp, ai 클립 렌더링은 기존 유지) ...
+        else if (type === 'exp') {
+            clip.style.top = `${this.TRACK_EXP_Y}px`;
+            clip.style.height = '30px';
+            clip.style.background = '#8e44ad';
+            clip.innerHTML = `<div style="padding:5px; color:white; font-size:10px;">🎮 Exp</div>`;
+            clip.onclick = (e) => {
+                e.stopPropagation();
+                const ins = window.InspectorInstance || this.inspector;
+                if (ins) ins.open(scene);
+            };
+        }
+        else if (type === 'ai_std') {
+            clip.style.top = `${this.TRACK_AI_STD_Y}px`;
+            clip.style.height = '25px';
+            clip.style.background = '#27ae60';
+            clip.innerHTML = `<div style="font-size:9px; color:white; padding:2px;">🤖 AI</div>`;
+            clip.onclick = () => this.aiModal.open({ ...scene, ai_planning: scene.ai_planning });
+        }
+
+        this.container.appendChild(clip);
+    }
+
+    calculateTotalDuration() {
+        this.totalDuration = 0;
+        window.directorJson?.sequences?.forEach(seq => {
+            seq.scenes?.forEach(scene => {
+                let c = 0;
+                scene.narrations?.forEach(n => c += n.length);
+                this.totalDuration += Math.max(1, c / this.CHARS_PER_SECOND);
+            });
+        });
+    }
+
+    renderRuler() {
+        if (!this.ruler) return;
+        this.ruler.innerHTML = '';
+        let timePos = 0;
+        let pixelPos = this.START_OFFSET;
+        const maxTime = this.totalDuration + 60;
+        while (timePos <= maxTime) {
+            const mark = document.createElement('div');
+            const isMajor = timePos % 60 === 0;
+            mark.className = `ruler-mark ${isMajor ? 'major' : ''}`;
+            mark.style.left = `${pixelPos}px`;
+            if (isMajor) {
+                mark.innerText = `${Math.floor(timePos / 60)}:${(timePos % 60).toString().padStart(2, '0')}`;
+            }
+            this.ruler.appendChild(mark);
+            timePos += 10;
+            pixelPos += 10 * this.zoom;
+        }
+    }
+}
+
+==============================
+FILE PATH: .\public\js\modules\Toast.js
+==============================
+// public/js/modules/Toast.js
+export class Toast {
+    static show(message, duration = 3000) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        toast.className = 'toast-msg';
+        toast.innerHTML = `<i class="fas fa-check-circle" style="color:#2ecc71;"></i> <span>${message}</span>`;
+
+        container.appendChild(toast);
+
+        setTimeout(() => {
+            if (toast.parentElement) toast.remove();
+        }, duration);
+    }
+}
+window.Toast = Toast;
+
+==============================
+FILE PATH: .\public\js\modules\UIManager.js
+==============================
+// public/js/modules/UIManager.js
+export class UIManager {
+    constructor() {
+        this.overlay = null;
+    }
+    // UniversalDataManager가 역할을 대체했으므로, 여기서는 껍데기만 유지하여 에러 방지
+    // 또는 구형 코드와의 호환성을 위해 메서드를 연결합니다.
+    openPromptEditor(title, type, initialValue, projectId) {
+        if (window.UniversalData) {
+            // type 예: "s1-prompt" -> ['1', 's1', 'prompt'] 변환 필요
+            const parts = title.split('-'); // 대시보드에서 보낸 title 활용 (예: s1-prompt)
+            if (parts.length >= 2) {
+                // UniversalData.open('stage_data', [projectId, parts[0], parts[1]], title);
+                // 하지만 Dashboard의 버튼은 's1', 'prompt' 식으로 인자를 보냄
+                // main.js의 openEditor 헬퍼 함수가 이미 UniversalData를 호출하도록 수정되었음.
+                // 따라서 이 클래스는 호환성 유지용 빈 껍데기입니다.
+            }
+        }
+    }
+}
+
+==============================
+FILE PATH: .\public\js\modules\UniversalDataManager.js
+==============================
+import { db } from './Database.js';
+import { Toast } from './Toast.js';
+
+// ★ 검색 기반 최신 모델 및 가격 (2026년 기준, 1만자당 원화 환산)
+// GPT-5.1: $1.25/1M token (매우 저렴) -> 약 ₩40
+// Gemini 2.5: $1.25/1M token (GPT-5.1과 동일) -> 약 ₩40
+const MODEL_SPECS = [
+    { id: 'GPT-5.2-pro', provider: 'openai', name: 'GPT-5.2 Pro', desc: '최상급 추론/코딩 (High Cost)', price: '₩200 / 10k자' },
+    { id: 'GPT-5.2', provider: 'openai', name: 'GPT-5.2', desc: '밸런스 모델 (Standard)', price: '₩60 / 10k자' },
+    { id: 'GPT-5.1', provider: 'openai', name: 'GPT-5.1', desc: '초고속/저비용 (Cost Efficient)', price: '₩40 / 10k자' }, //
+    { id: 'Gemini-3-pro', provider: 'google', name: 'Gemini 3 Pro', desc: '복합 추론/긴 문맥 (Premium)', price: '₩180 / 10k자' },
+    { id: 'Gemini-2.5-pro', provider: 'google', name: 'Gemini 2.5 Pro', desc: '가성비 최강 (Best Value)', price: '₩110 / 10k자' }, //
+    { id: 'Gemini-2.5-flash', provider: 'google', name: 'Gemini 2.5 Flash', desc: '초고속 (Low Latency)', price: '₩20 / 10k자' } //
+];
+
+export class UniversalDataManager {
+    constructor(projectManager) {
+        this.pm = projectManager;
+        this.context = null;
+        this.activeSourceId = null;
+        this.activeSourceLabel = null;
+        this.createModal();
+    }
+
+    createModal() {
+        if (document.getElementById('udm-modal')) return;
+        const div = document.createElement('div');
+        div.id = 'udm-modal';
+        div.className = 'modal-overlay';
+
+        div.innerHTML = `
+            <div class="modal-box" style="width: 1100px; height: 800px; padding: 0; display:flex; flex-direction:column; background:#222;">
+                <div class="modal-header" style="padding: 15px; background: #252525; border-bottom:1px solid #333; flex:0 0 auto;">
+                    <span id="udm-title" style="font-weight:bold; color:#3498db;"><i class="fas fa-database"></i> Data Manager</span>
+                    <button class="btn-icon" id="btn-udm-close"><i class="fas fa-times"></i></button>
+                </div>
+
+                <div class="modal-body udm-container">
+                    <div class="udm-sidebar" style="width:280px; border-right:1px solid #333; background:#1a1a1a; display:flex; flex-direction:column;">
+                        <div style="padding:10px; font-size:11px; font-weight:bold; color:#777; border-bottom:1px solid #333;">
+                            VERSION HISTORY
+                        </div>
+                        <div id="udm-history-list" class="udm-history-list" style="flex:1; overflow-y:auto;"></div>
+                    </div>
+
+                    <div class="udm-main">
+                        <div class="udm-toolbar" style="height:50px; background:#252525; border-bottom:1px solid #333; display:flex; align-items:center; justify-content:space-between; padding:0 15px;">
+                            <div class="udm-info" style="display:flex; align-items:center;">
+                                <span style="font-weight:bold; color:#fff; font-size:13px;">Running (Live)</span>
+                                <span id="udm-source-info" class="source-info"></span>
+                                <span id="udm-status" class="udm-status" style="font-size:11px; margin-left:10px;">● Unsaved Changes</span>
+                            </div>
+                            <div style="display:flex; gap:8px;">
+                                <input type="text" id="udm-ver-label" placeholder="Version Label" style="width:140px; height:28px; background:#111; border:1px solid #444; color:white; padding:5px; font-size:12px;">
+                                <button class="btn" id="btn-udm-save-ver" style="background:#d35400; color:white; padding:4px 10px;">
+                                    <i class="fas fa-tag"></i> Save Version
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="udm-content-wrapper">
+                            <textarea id="udm-editor"></textarea>
+                            <div id="udm-gui-form" style="display:none; padding:20px; overflow-y:auto; height:100%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer" style="background: #252525; padding:15px; border-top:1px solid #333; flex:0 0 auto; display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:11px; color:#666;">
+                        * Save Version: 히스토리 저장 / Apply: 실제 반영 (GitHub Sync는 즉시 실행)
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn" id="btn-udm-cancel">Cancel</button>
+                        <button class="btn btn-primary" id="btn-udm-apply" style="width:120px; font-weight:bold;">Apply & Close</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(div);
+
+        this.modal = div;
+        this.editor = div.querySelector('#udm-editor');
+        this.guiForm = div.querySelector('#udm-gui-form');
+        this.historyList = div.querySelector('#udm-history-list');
+        this.labelInput = div.querySelector('#udm-ver-label');
+
+        div.querySelector('#btn-udm-close').onclick = () => this.close();
+        div.querySelector('#btn-udm-cancel').onclick = () => this.close();
+        div.querySelector('#btn-udm-apply').onclick = () => this.applyToLive();
+        div.querySelector('#btn-udm-save-ver').onclick = () => this.saveToHistory();
+
+        this.editor.addEventListener('input', () => this.markUnsaved());
+        this.guiForm.addEventListener('change', () => this.markUnsaved());
+        this.guiForm.addEventListener('input', () => this.markUnsaved());
+
+        // ★ 탭 전환 함수 전역 등록
+        window.switchUdmTab = (tabName) => this.switchSettingsTab(tabName);
+        window.selectModel = (id) => this.selectModelCard(id);
+        window.syncGithub = () => this.syncGithub();
+    }
+
+    markUnsaved() { this.modal.querySelector('#udm-status').classList.add('unsaved'); }
+
+    // 모달 열기 (Settings인 경우와 일반 Editor인 경우 분기)
+    async open(type, id, title) {
+        this.context = { type, id, title };
+        document.getElementById('udm-title').innerHTML = `<i class="fas fa-edit"></i> ${title}`;
+        this.modal.classList.add('open');
+        this.labelInput.value = '';
+        this.activeSourceId = null;
+        this.updateHeaderInfo();
+
+        if (type === 'global_settings') {
+            this.editor.style.display = 'none';
+            this.guiForm.style.display = 'block';
+            // 기본은 AI 탭
+            this.switchSettingsTab('ai');
+        } else {
+            this.editor.style.display = 'block';
+            this.guiForm.style.display = 'none';
+            await this.loadContentForEditor(type, id);
+        }
+
+        this.modal.querySelector('#udm-status').classList.remove('unsaved');
+    }
+
+    // Settings 내부 탭 전환 (AI / Prompt / GitHub)
+    async switchSettingsTab(tabName) {
+        // 현재 활성 탭 UI 갱신
+        const tabBtns = document.querySelectorAll('.udm-tab-btn');
+        tabBtns.forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`tab-btn-${tabName}`)?.classList.add('active');
+
+        // 컨텍스트 변경 (버전 관리를 탭별로 하기 위함)
+        if (tabName === 'ai' || tabName === 'github') {
+            this.context.type = 'global_settings'; // 통합 설정
+            this.context.id = 'main_config';
+        } else if (tabName === 'prompts') {
+            this.context.type = 'system_prompts'; // 프롬프트는 별도 테이블
+            this.context.id = 'master'; // 기본값 (나중에 분화 가능)
+        }
+
+        // 해당 탭의 GUI 렌더링
+        const content = await this.loadDataFromDB(this.context.type, this.context.id);
+        this.renderSettingsGUI(tabName, content);
+
+        // 히스토리 목록 갱신 (탭마다 버전이 다름)
+        await this.loadHistoryList();
+    }
+
+    // DB 데이터 로드 헬퍼
+    async loadDataFromDB(type, id) {
+        let data = null;
+        if (type === 'global_settings') data = await db.global_settings.get(id);
+        else if (type === 'stage_data') data = await db.stage_data.get({ pid: id[0], stage: id[1], type: id[2] });
+        else if (type === 'system_prompts') data = await db.system_prompts.get(id);
+
+        if (!data) return "";
+        if (type === 'stage_data') return data.current || "";
+        if (type === 'system_prompts') return data.content || "";
+        if (type === 'global_settings') {
+            const { id: _, ...rest } = data;
+            return JSON.stringify(rest, null, 2);
+        }
+        return "";
+    }
+
+    // 일반 에디터용 로드
+    async loadContentForEditor(type, id) {
+        const content = await this.loadDataFromDB(type, id);
+        this.editor.value = content;
+        await this.loadHistoryList();
+    }
+
+    // ★ GUI 렌더링 (Settings 모달 내부)
+    renderSettingsGUI(activeTab, contentJson) {
+        let config = {};
+        let promptContent = "";
+
+        if (activeTab === 'prompts') {
+            promptContent = contentJson; // 텍스트 그대로
+        } else {
+            try { config = JSON.parse(contentJson || "{}"); } catch (e) { }
+        }
+
+        const ai = config.ai_config || {};
+        const gh = config.github_config || {};
+
+        const tabsHtml = `
+            <div class="udm-tabs" style="display:flex; border-bottom:1px solid #444; margin-bottom:15px;">
+                <button id="tab-btn-ai" class="udm-tab-btn ${activeTab === 'ai' ? 'active' : ''}" onclick="switchUdmTab('ai')"><i class="fas fa-robot"></i> AI Model</button>
+                <button id="tab-btn-prompts" class="udm-tab-btn ${activeTab === 'prompts' ? 'active' : ''}" onclick="switchUdmTab('prompts')"><i class="fas fa-comment-dots"></i> System Prompts</button>
+                <button id="tab-btn-github" class="udm-tab-btn ${activeTab === 'github' ? 'active' : ''}" onclick="switchUdmTab('github')"><i class="fab fa-github"></i> GitHub</button>
+            </div>
+        `;
+
+        let bodyHtml = '';
+
+        // [Tab 1] AI Model
+        if (activeTab === 'ai') {
+            bodyHtml = `
+                <div class="form-group">
+                    <label class="form-label">API Key (OpenAI / Google)</label>
+                    <input type="password" id="gui-api-key" class="form-input" value="${ai.api_key || ''}" placeholder="sk-...">
+                </div>
+                <label class="form-label" style="margin-top:15px;">Select Model</label>
+                <div class="model-grid">
+                    ${MODEL_SPECS.map(m => `
+                        <div class="model-card ${ai.model === m.id ? 'selected' : ''}" onclick="selectModel('${m.id}')" id="card-${m.id}">
+                            <div class="mc-name">${m.name}</div>
+                            <div class="mc-desc">${m.desc}</div>
+                            <div class="mc-price">${m.price}</div>
+                        </div>
+                    `).join('')}
+                </div>
+                <input type="hidden" id="gui-selected-model" value="${ai.model || 'GPT-5.2-pro'}">
+            `;
+        }
+        // [Tab 2] System Prompts (New Feature)
+        else if (activeTab === 'prompts') {
+            bodyHtml = `
+                <div style="display:flex; flex-direction:column; height:100%;">
+                    <label class="form-label" style="color:#2ecc71;">Master System Prompt (AI Persona)</label>
+                    <div style="font-size:11px; color:#666; margin-bottom:5px;">AI가 연출을 생성할 때 기본적으로 따르는 규칙입니다.</div>
+                    <textarea id="gui-prompt-editor" style="flex:1; background:#111; color:#eee; border:1px solid #444; padding:15px; resize:none; line-height:1.5;">${promptContent}</textarea>
+                </div>
+            `;
+        }
+        // [Tab 3] GitHub Sync (Restored)
+        else if (activeTab === 'github') {
+            bodyHtml = `
+                <div class="form-group"><label class="form-label">Repository Owner</label><input type="text" id="gui-repo-owner" class="form-input" value="${gh.repo_owner || ''}"></div>
+                <div class="form-group"><label class="form-label">Repository Name</label><input type="text" id="gui-repo-name" class="form-input" value="${gh.repo_name || ''}"></div>
+                <div class="form-group"><label class="form-label">Branch</label><input type="text" id="gui-repo-branch" class="form-input" value="${gh.branch || 'main'}"></div>
+                <div class="form-group"><label class="form-label">GitHub Token (PAT)</label><input type="password" id="gui-repo-token" class="form-input" value="${gh.token || ''}"></div>
+                <div class="form-group"><label class="form-label">Local Path (Server)</label><input type="text" id="gui-local-path" class="form-input" value="${gh.local_path || ''}"></div>
+                <button class="btn" onclick="syncGithub()" style="margin-top:20px; width:100%; background:#24292e; padding:10px;"><i class="fab fa-github"></i> Sync Now</button>
+            `;
+        }
+
+        this.guiForm.innerHTML = tabsHtml + `<div class="udm-section active">${bodyHtml}</div>`;
+    }
+
+    // 모델 카드 선택 핸들러
+    selectModelCard(id) {
+        document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+        document.getElementById(`card-${id}`).classList.add('selected');
+        document.getElementById('gui-selected-model').value = id;
+        this.markUnsaved();
+    }
+
+    // 현재 화면의 데이터를 가져옴 (저장용)
+    getGuiData() {
+        // 1. 일반 에디터
+        if (this.context.type !== 'global_settings' && this.context.type !== 'system_prompts') return this.editor.value;
+
+        // 2. 시스템 프롬프트 탭
+        const promptEditor = document.getElementById('gui-prompt-editor');
+        if (promptEditor) return promptEditor.value;
+
+        // 3. 설정 (AI / Github)
+        // 기존 설정 로드 (덮어쓰기 방지)
+        // (실제로는 비동기라 복잡하지만, 여기서는 UI값 위주로 구성)
+        const config = {
+            ai_config: {
+                model: document.getElementById('gui-selected-model')?.value || 'GPT-5.2-pro',
+                api_key: document.getElementById('gui-api-key')?.value || ''
+            },
+            github_config: {
+                repo_owner: document.getElementById('gui-repo-owner')?.value || '',
+                repo_name: document.getElementById('gui-repo-name')?.value || '',
+                branch: document.getElementById('gui-repo-branch')?.value || 'main',
+                token: document.getElementById('gui-repo-token')?.value || '',
+                local_path: document.getElementById('gui-local-path')?.value || ''
+            },
+            ui_config: { theme: "dark" }
+        };
+        return JSON.stringify(config, null, 2);
+    }
+
+    // GitHub Sync 실행
+    async syncGithub() {
+        const btn = document.querySelector('button[onclick="syncGithub()"]');
+        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+
+        try {
+            // 현재 입력값 기반으로 요청
+            const configJson = this.getGuiData();
+            const config = JSON.parse(configJson);
+
+            const response = await fetch('/api/git/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+
+            if (!response.ok) throw new Error("Sync Failed");
+            const res = await response.json();
+            if (window.Toast) Toast.show(res.message);
+            else alert(res.message);
+        } catch (e) {
+            alert("Git Error: " + e.message);
+        } finally {
+            if (btn) btn.innerHTML = '<i class="fab fa-github"></i> Sync Now';
+        }
+    }
+
+    // 저장 및 적용
+    async applyToLive() {
+        const content = this.getGuiData();
+        const { type, id } = this.context;
+        try {
+            if (type === 'global_settings') {
+                const settingsObj = JSON.parse(content);
+                settingsObj.id = id;
+                await db.global_settings.put(settingsObj);
+            } else if (type === 'system_prompts') {
+                await db.system_prompts.put({ id: id, content: content, updatedAt: Date.now() });
+            } else if (type === 'stage_data') {
+                await db.stage_data.put({ pid: id[0], stage: id[1], type: id[2], current: content, updatedAt: Date.now() });
+                if (window.ProjectMgrInstance) await window.ProjectMgrInstance.updateDashboardStatus();
+            }
+            if (window.Toast) Toast.show("Applied & Saved!");
+            this.close();
+        } catch (e) { console.error(e); alert("Save Error: " + e.message); }
+    }
+
+    // ... (나머지 loadHistoryList, saveToHistory 등 기존 로직 유지) ...
+    async saveToHistory() {
+        const content = this.getGuiData();
+        const label = this.labelInput.value.trim() || 'Auto Save';
+        const targetIdStr = Array.isArray(this.context.id) ? this.context.id.join('_') : this.context.id;
+        try {
+            await db.version_history.add({ target_type: this.context.type, target_id: targetIdStr, content, label, timestamp: Date.now() });
+            if (window.Toast) Toast.show("Version Saved");
+            this.labelInput.value = '';
+            await this.loadHistoryList();
+        } catch (e) { console.error(e); }
+    }
+
+    async loadHistoryList() {
+        this.historyList.innerHTML = '';
+        const targetIdStr = Array.isArray(this.context.id) ? this.context.id.join('_') : this.context.id;
+        const history = await db.version_history.where('[target_type+target_id]').equals([this.context.type, targetIdStr]).reverse().sortBy('timestamp');
+
+        const live = document.createElement('div');
+        live.className = `version-item ${this.activeSourceId === null ? 'active-version' : ''}`;
+        live.innerHTML = `<div class="ver-label">Running (Live)</div><div class="ver-date">Now editing...</div>`;
+        if (this.activeSourceId === null) live.style.borderLeft = "4px solid #3498db";
+        live.onclick = () => {
+            this.activeSourceId = null; this.updateHeaderInfo(); this.loadHistoryList();
+            // 탭에 따라 리로드 방식 다름 (간소화)
+            this.switchSettingsTab(this.context.type === 'system_prompts' ? 'prompts' : 'ai');
+        };
+        this.historyList.appendChild(live);
+
+        history.forEach(ver => {
+            const el = document.createElement('div');
+            const isActive = (ver.id == this.activeSourceId);
+            el.className = `version-item ${isActive ? 'active-version' : ''}`;
+            const badgeHtml = isActive ? `<span class="current-badge">CURRENT</span>` : '';
+            el.innerHTML = `<div class="ver-label">${ver.label} ${badgeHtml}</div><div class="ver-date">${new Date(ver.timestamp).toLocaleString()}</div><div class="ver-tag">v${ver.id}</div>`;
+            el.onclick = () => { if (confirm("Load this version?")) this.loadVersionToEditor(ver); };
+            this.historyList.appendChild(el);
+        });
+    }
+
+    loadVersionToEditor(version) {
+        // 현재 활성 탭에 맞춰 값 주입
+        const activeTab = document.querySelector('.udm-tab-btn.active')?.innerText.includes('Prompts') ? 'prompts' : 'ai';
+
+        if (activeTab === 'prompts') {
+            document.getElementById('gui-prompt-editor').value = version.content;
+        } else if (activeTab === 'ai' || activeTab === 'github') {
+            this.renderSettingsGUI(activeTab, version.content);
+        } else {
+            this.editor.value = version.content;
+        }
+
+        this.activeSourceId = version.id;
+        this.activeSourceLabel = version.label;
+        this.updateHeaderInfo();
+        this.loadHistoryList();
+    }
+
+    updateHeaderInfo() {
+        const infoEl = document.getElementById('udm-source-info');
+        infoEl.innerText = this.activeSourceId ? `- Based on: ${this.activeSourceLabel}` : '';
+    }
+    close() { this.modal.classList.remove('open'); this.context = null; }
+}
+
+==============================
+FILE PATH: .\server\index.js
+==============================
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const open = require('open');
+
+// 1. 라우터 모듈 불러오기 (새로 추가됨)
+const aiRoutes = require('./routes/ai');
+
+const app = express();
+
+// 포트 설정 (3001번 유지)
+const PORT = process.env.PORT || 3001;
+
+// 2. Middleware 설정
+app.use(cors());
+app.use(express.json({ limit: '50mb' })); // 대용량 JSON 처리를 위해 제한 상향
+app.use(express.static(path.join(__dirname, '../public'))); // Frontend 정적 파일 서빙
+
+// 3. API Routes 등록
+// 기본 상태 체크
+app.get('/api/status', (req, res) => {
+    res.json({ status: 'online', version: '5.0.0' });
+});
+
+// ★ AI 서비스 라우터 연결 (핵심 추가 사항)
+// /api/ai/generate 등의 요청을 routes/ai.js로 보냅니다.
+app.use('/api/ai', aiRoutes);
+
+// 4. Main Entry (SPA 지원)
+// API 요청이 아닌 모든 경로는 index.html을 반환하여 프론트엔드 라우팅 지원
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// 5. 서버 실행
+app.listen(PORT, () => {
+    console.log(`\n🚀 SFT Console v5 Server running at http://localhost:${PORT}`);
+    console.log(`📁 Serving Client from /public`);
+    console.log(`🤖 AI Service Ready at /api/ai`);
+
+    // 서버 시작 시 브라우저 자동 열기 (개발 편의성, 필요시 주석 해제)
+    // open(`http://localhost:${PORT}`);
+});
+
+==============================
+FILE PATH: .\server\routes\ai.js
+==============================
+const express = require('express');
+const router = express.Router();
+const AiService = require('../services/AiService');
+
+// POST /api/ai/generate
+router.post('/generate', async (req, res) => {
+    try {
+        console.log("🤖 AI Request Received for:", req.body.formatted_id);
+
+        // 클라이언트가 보낸 데이터 전체를 서비스로 넘김
+        const result = await AiService.generateDirecting(req.body);
+
+        res.json(result);
+    } catch (error) {
+        console.error("❌ AI Generation Error:", error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+module.exports = router;
+
+==============================
+FILE PATH: .\server\routes\git.js
+==============================
+const express = require('express');
+const router = express.Router();
+const GitService = require('../services/GitService');
+
+// POST /api/git/sync
+router.post('/sync', async (req, res) => {
+    try {
+        const result = await GitService.syncRepository(req.body);
+        res.json(result);
+    } catch (error) {
+        console.error("❌ Git Sync Error:", error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+module.exports = router;
+
+==============================
+FILE PATH: .\server\services\AiService.js
+==============================
+const path = require('path');
+// .env 파일 로드 (루트 경로 SFT_Console_v5/.env)
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+
+const OpenAI = require('openai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+const MODEL_MAP = {
+    'GPT-5.2-pro': 'gpt-4o',
+    'GPT-5.2': 'gpt-4-turbo',
+    'GPT-5.1': 'gpt-3.5-turbo',
+    'Gemini-3-pro': 'gemini-1.5-pro',
+    'Gemini-3-bison': 'gemini-1.5-flash',
+    'Gemini-2.5-pro': 'gemini-1.0-pro'
+};
+
+class AiService {
+    static async generateDirecting(data) {
+        // ★ [안전장치] customConfig가 없으면 빈 객체로 초기화 (에러 방지)
+        const { customConfig = {}, customPrompts = {}, isExperienceMode } = data;
+
+        // 1. API Key 우선순위: 클라이언트 설정 -> .env 파일
+        const envKeyOpenAI = process.env.OPENAI_API_KEY;
+        const envKeyGemini = process.env.GEMINI_API_KEY;
+
+        const apiKey = customConfig.api_key || envKeyOpenAI || envKeyGemini;
+        const uiModelName = customConfig.model || 'GPT-5.2-pro';
+        const realModelId = MODEL_MAP[uiModelName] || uiModelName;
+        const provider = uiModelName.toLowerCase().includes('gemini') ? 'google' : 'openai';
+
+        // 디버그 로그: 키가 로드되었는지 확인 (보안상 앞 3자리만 표시)
+        const keyStatus = apiKey ? `Loaded (${apiKey.substring(0, 3)}...)` : "MISSING";
+        console.log(`🤖 AI Request: [${provider}] Model: ${uiModelName}, Key: ${keyStatus}`);
+
+        if (!apiKey) {
+            throw new Error(`API Key가 없습니다. Settings 메뉴에 입력하거나 .env 파일을 확인해주세요.`);
+        }
+
+        // 2. 프롬프트 구성
+        let systemPrompt = customPrompts.master || "You are a creative director.";
+        if (customPrompts.style) {
+            systemPrompt += `\n\n[Style Guideline]\n${customPrompts.style}`;
+        }
+
+        // 3. 데이터 정리
+        const sceneData = {
+            id: data.formatted_id,
+            narration: data.narrations,
+            visual_plans: data.visual_plans,
+            experience: isExperienceMode ? data.experience_track : null
+        };
+        const userContent = JSON.stringify(sceneData, null, 2);
+
+        // 4. 호출
+        if (provider === 'google') {
+            return await this.callGemini(apiKey, realModelId, systemPrompt, userContent);
+        } else {
+            return await this.callOpenAI(apiKey, realModelId, systemPrompt, userContent);
+        }
+    }
+
+    static async callOpenAI(apiKey, model, systemPrompt, userContent) {
+        const openai = new OpenAI({ apiKey });
+        const completion = await openai.chat.completions.create({
+            model: model,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: `Analyze this scene and generate JSON directing:\n${userContent}` }
+            ],
+            response_format: { type: "json_object" }
+        });
+        return this.parseResult(completion.choices[0].message.content);
+    }
+
+    static async callGemini(apiKey, model, systemPrompt, userContent) {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const aiModel = genAI.getGenerativeModel({
+            model: model,
+            generationConfig: { responseMimeType: "application/json" }
+        });
+        const fullPrompt = `${systemPrompt}\n\nRespond in JSON only.\n\n[Scene Data]\n${userContent}`;
+        const result = await aiModel.generateContent(fullPrompt);
+        const response = await result.response;
+        return this.parseResult(response.text());
+    }
+
+    static parseResult(text) {
+        try {
+            const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(cleanText);
+        } catch (e) {
+            console.error("JSON Parse Error:", text);
+            throw new Error("AI 응답이 올바른 JSON이 아닙니다.");
+        }
+    }
+}
+
+module.exports = AiService;
+
+==============================
+FILE PATH: .\server\services\GitService.js
+==============================
+const simpleGit = require('simple-git');
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+
+class GitService {
+    static async syncRepository(data) {
+        const { github_config } = data;
+
+        // 1. 설정값 우선순위
+        const token = github_config.token || process.env.GITHUB_TOKEN;
+        const username = github_config.repo_owner || process.env.GITHUB_USERNAME;
+        const repoName = github_config.repo_name;
+        const branch = github_config.branch || 'main';
+        const localPath = github_config.local_path;
+
+        if (!localPath) throw new Error("로컬 프로젝트 경로(Local Path)가 설정되지 않았습니다.");
+        if (!token) throw new Error("GitHub Token이 없습니다.");
+        if (!username || !repoName) throw new Error("Repository 정보가 부족합니다.");
+
+        console.log(`🐙 Git Sync Start: ${localPath} -> ${username}/${repoName} (${branch})`);
+
+        const git = simpleGit(localPath);
+
+        // 2. Git 초기화
+        const isRepo = await git.checkIsRepo();
+        if (!isRepo) {
+            await git.init();
+            console.log("Initialized new Git repository.");
+        }
+
+        // ★ [추가] 커밋을 위한 사용자 정보 자동 설정 (에러 해결 핵심)
+        // 로컬 설정(local config)에만 적용되므로 다른 프로젝트에 영향 없음
+        await git.addConfig('user.name', username);
+        await git.addConfig('user.email', `${username}@sft-console.local`);
+
+        // 3. Remote URL 구성 (Token 인증)
+        const remoteUrl = `https://${username}:${token}@github.com/${username}/${repoName}.git`;
+
+        const remotes = await git.getRemotes(true);
+        if (remotes.find(r => r.name === 'origin')) {
+            await git.remote(['set-url', 'origin', remoteUrl]);
+        } else {
+            await git.addRemote('origin', remoteUrl);
+        }
+
+        // 4. 스테이징 & 커밋
+        await git.add('.');
+
+        const status = await git.status();
+        if (status.files.length > 0) {
+            const commitMsg = `Update from SFT Console: ${new Date().toLocaleString()}`;
+            await git.commit(commitMsg);
+            console.log(`Commit created: ${commitMsg}`);
+        } else {
+            console.log("No changes to commit.");
+        }
+
+        // 5. 푸시
+        await git.push('origin', branch, { '--set-upstream': null }).catch(async (err) => {
+            console.log("Push failed, trying to switch branch...");
+            // 브랜치가 안 맞을 경우 대비
+            try {
+                await git.checkoutLocalBranch(branch);
+            } catch (e) { /* 이미 있으면 무시 */ }
+
+            await git.push('origin', branch, { '--set-upstream': null });
+        });
+
+        return { success: true, message: `Pushed to ${branch} successfully!` };
+    }
+}
+
+module.exports = GitService;
+

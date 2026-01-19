@@ -1,3 +1,7 @@
+/* =========================================
+   SFT Console V5.0 - Main Stylesheet
+   ========================================= */
+
 /* === 1. Base & Reset === */
 :root {
     --bg-dark: #121212;
@@ -8,6 +12,8 @@
     --text-main: #e0e0e0;
     --text-sub: #aaa;
     --seq-line-color: #f1c40f;
+    --success: #2ecc71;
+    --danger: #e74c3c;
 }
 
 * {
@@ -151,7 +157,6 @@ select {
 .view-section {
     flex: 1;
     display: none;
-    /* JS toggles this */
     flex-direction: column;
     overflow: hidden;
     height: 100%;
@@ -261,7 +266,6 @@ select {
     display: flex;
     flex-direction: column;
     padding: 0;
-    /* ★ 중요: 좌우 패딩을 0으로 설정하여 Ruler 시작점 정렬 */
     flex-shrink: 0;
 }
 
@@ -271,7 +275,6 @@ select {
     align-items: center;
     gap: 15px;
     padding: 0 15px;
-    /* 컨트롤 버튼들에만 패딩 적용 */
 }
 
 #timeline-ruler {
@@ -303,7 +306,6 @@ select {
     background: #202020;
     overflow-x: auto;
     overflow-y: hidden;
-    /* Grid Pattern */
     background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
     background-size: 20px 20px;
@@ -370,28 +372,67 @@ select {
     margin-top: 2px;
     overflow: hidden;
     text-overflow: ellipsis;
-    /* 줄바꿈 허용 설정 */
     white-space: normal !important;
     line-height: 1.2;
     display: -webkit-box;
     -webkit-line-clamp: 2;
-    /* 최대 2줄 표시 */
     -webkit-box-orient: vertical;
 }
 
-/* === 6. Inspector Panel === */
+/* === 6. Inspector Panel (Bottom Dock & Resizable) === */
 #inspector-panel {
-    height: 320px;
-    background: #181818;
-    border-top: 4px solid var(--primary);
-    display: flex;
-    flex-direction: column;
-    position: relative;
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: -100% !important;
+    /* Default hidden */
+
+    width: 100vw !important;
+    /* Full Width */
+    margin: 0 !important;
+    height: 350px;
+    min-height: 200px;
+    max-height: 85vh;
+
+    background: #1a1a1a !important;
+    border-top: 1px solid #444 !important;
+    z-index: 9999 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5) !important;
+
+    /* Animation for slide up/down */
+    transition: bottom 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-/* Ensure it's hidden by default, visible when active */
-#inspector-panel:not(.open) {
-    display: none;
+#inspector-panel.open {
+    bottom: 0 !important;
+}
+
+/* Resize Handle */
+.resize-handle {
+    height: 12px;
+    background: #252525;
+    border-bottom: 1px solid #333;
+    cursor: ns-resize;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.resize-handle:hover {
+    background: #333;
+}
+
+.resize-handle::after {
+    content: '';
+    width: 40px;
+    height: 4px;
+    background: #555;
+    border-radius: 2px;
 }
 
 .inspector-header {
@@ -401,20 +442,34 @@ select {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex: 0 0 auto;
 }
 
 .inspector-body {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 20px !important;
+    padding: 15px 20px !important;
+    overflow-y: hidden !important;
     flex: 1;
-    display: flex;
-    overflow: hidden;
+    width: 100%;
 }
 
 .inspector-column {
     flex: 1;
-    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 10px;
     overflow-y: auto;
-    border-right: 1px solid #333;
-    min-width: 250px;
+    min-width: 0;
+}
+
+/* Middle column wider */
+.inspector-column:nth-child(2) {
+    flex: 1.5;
 }
 
 .narration-section {
@@ -431,29 +486,6 @@ select {
     white-space: pre-wrap;
 }
 
-/* Visual Plans */
-.plan-option {
-    background: #1a1a1a;
-    border: 2px solid #333;
-    padding: 10px;
-    margin-bottom: 8px;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.plan-option.selected {
-    border-color: var(--primary);
-    background: rgba(52, 152, 219, 0.1);
-}
-
-.plan-header {
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    font-weight: bold;
-    margin-bottom: 5px;
-}
-
 .plan-textarea {
     width: 100%;
     background: #111;
@@ -464,7 +496,7 @@ select {
     resize: vertical;
 }
 
-/* === 7. Modal === */
+/* === 7. Modal (Data Editor) === */
 .modal-overlay {
     position: fixed;
     top: 0;
@@ -484,19 +516,28 @@ select {
 }
 
 .modal-box {
-    width: 700px;
-    height: 600px;
+    width: 900px;
+    height: 700px;
     background: #222;
     border: 1px solid #444;
     border-radius: 8px;
     display: flex;
     flex-direction: column;
-    padding: 20px;
+    padding: 0;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+    overflow: hidden;
+}
+
+.modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
 }
 
 .modal-header {
     padding: 15px;
+    background: #252525;
     border-bottom: 1px solid #444;
     display: flex;
     justify-content: space-between;
@@ -506,23 +547,128 @@ select {
 
 .modal-body {
     flex: 1;
-    padding: 0;
+    display: flex;
     overflow: hidden;
 }
 
 .modal-footer {
     padding: 15px;
+    background: #252525;
     border-top: 1px solid #444;
-    text-align: right;
     display: flex;
-    justify-content: flex-end;
-    gap: 10px;
+    justify-content: space-between;
+    align-items: center;
 }
 
-/* Editor Textarea */
-.ide-editor {
-    width: 100%;
-    height: 100%;
+/* History Panel inside Modal */
+.history-panel {
+    width: 280px;
+    background: #1a1a1a;
+    border-right: 1px solid #444;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-header {
+    padding: 10px;
+    font-size: 11px;
+    font-weight: bold;
+    color: #888;
+    background: #202020;
+    border-bottom: 1px solid #333;
+}
+
+.version-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.version-item {
+    padding: 12px 15px;
+    border-bottom: 1px solid #2a2a2a;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.version-item:hover {
+    background: #252525;
+}
+
+/* ★ Active Version Highlighting (Plan A) */
+.version-item.active-version {
+    border-left: 4px solid var(--success) !important;
+    background: rgba(46, 204, 113, 0.15) !important;
+}
+
+.current-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: bold;
+    background: var(--success);
+    color: #000;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+    text-transform: uppercase;
+}
+
+.ver-actions {
+    display: flex;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.btn-xs {
+    padding: 2px 6px;
+    font-size: 10px;
+    border-radius: 3px;
+    border: none;
+    cursor: pointer;
+    background: #444;
+    color: #ddd;
+}
+
+.btn-xs:hover {
+    background: #555;
+}
+
+.load-btn {
+    background: var(--primary);
+    color: white;
+}
+
+/* Editor Panel inside Modal */
+.editor-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+}
+
+.editor-tabs {
+    display: flex;
+    background: #252525;
+    border-bottom: 1px solid #444;
+}
+
+.tab-link {
+    padding: 8px 15px;
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 12px;
+    border-bottom: 2px solid transparent;
+}
+
+.tab-link.active {
+    color: #fff;
+    border-bottom-color: var(--primary);
+}
+
+.main-editor {
+    flex: 1;
     background: #1e1e1e;
     color: #a9b7c6;
     border: none;
@@ -531,13 +677,18 @@ select {
     font-size: 13px;
     line-height: 1.5;
     resize: none;
-}
-
-.ide-editor:focus {
     outline: none;
 }
 
-/* === 8. Conveyor View Styles === */
+.source-info {
+    font-size: 11px;
+    color: var(--success);
+    margin-left: 8px;
+    font-weight: normal;
+    opacity: 0.9;
+}
+
+/* === 8. Conveyor View === */
 .conv-toolbar {
     height: 60px;
     background: #1a1a1a;
@@ -614,28 +765,42 @@ select {
     cursor: not-allowed;
 }
 
-/* AI Track specific overrides */
-.track-clip[style*="background: linear-gradient(135deg, #27ae60"] {
-    box-shadow: 0 0 5px #2ecc71;
+/* Conveyor Output Styles */
+.conv-display {
+    background: #000;
+    border: 1px solid #333;
+    color: #666;
+    padding: 15px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    overflow-y: auto;
+    border-radius: 4px;
+    font-size: 12px;
+    height: 100%;
+    transition: all 0.3s ease;
 }
 
-.track-clip[style*="background: linear-gradient(135deg, #27ae60"]:hover {
-    transform: translateY(-2px) scale(1.02);
-    z-index: 100;
+.conv-display.done {
+    background: rgba(46, 204, 113, 0.05) !important;
+    border: 2px solid var(--success) !important;
+    color: #e0e0e0 !important;
+    box-shadow: 0 0 15px rgba(46, 204, 113, 0.1) !important;
 }
 
-/* AI Result Modal - Split View */
-#ai-preview-container::-webkit-scrollbar {
-    width: 6px;
+.conv-display.done::before {
+    content: "✔ AI Generated";
+    display: block;
+    background: var(--success);
+    color: black;
+    font-weight: bold;
+    font-size: 11px;
+    padding: 4px 8px;
+    width: fit-content;
+    border-radius: 4px;
+    margin-bottom: 10px;
 }
 
-#ai-preview-container::-webkit-scrollbar-thumb {
-    background: #444;
-    border-radius: 3px;
-}
-
-/* === 9. Dark Scrollbar (Global & Strong) === */
-/* html, body 및 모든 요소에 적용 */
+/* === 9. Scrollbar & Extras === */
 *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -658,251 +823,502 @@ select {
     background: #1a1a1a;
 }
 
-/* 체험 씬 트랙 스타일 */
-.experience-track-bar {
-    border-radius: 4px;
-    font-size: 10px;
-    color: white;
+/* Toast Notifications */
+#toast-container {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+}
+
+.toast-msg {
+    background: rgba(0, 0, 0, 0.9);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 30px;
+    font-size: 14px;
+    border: 1px solid #555;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+    animation: fadeInOut 3s forwards;
+    pointer-events: auto;
     display: flex;
     align-items: center;
-    padding-left: 5px;
-    cursor: pointer;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
-    overflow: hidden;
-    white-space: nowrap;
-    z-index: 5;
+    gap: 8px;
 }
 
-.experience-track-bar:hover {
-    border: 1px solid #fff !important;
-    z-index: 20;
+@keyframes fadeInOut {
+    0% {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    10% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    90% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
 }
 
-/* === 12. Universal Data Manager (UDM) Modal === */
-.udm-container {
+/* --- UIManager Modal Internal Layout --- */
+.modal-layout-container {
     display: flex;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    gap: 0;
+    height: 60vh;
+    /* 모달 내부 높이 고정 */
+    border: 1px solid #333;
+    background-color: #121212;
 }
 
-/* 좌측: 히스토리 사이드바 */
-.udm-sidebar {
-    width: 250px;
-    background: #1a1a1a;
-    border-right: 1px solid #444;
-    display: flex;
-    flex-direction: column;
-}
-
-.udm-history-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0;
-}
-
-.version-item {
-    padding: 12px 15px;
-    border-bottom: 1px solid #2a2a2a;
-    cursor: pointer;
-    transition: 0.2s;
+/* Left: Version History */
+.modal-sidebar {
+    width: 280px;
+    background-color: #1e1e1e;
+    border-right: 1px solid #333;
     display: flex;
     flex-direction: column;
-    gap: 4px;
 }
 
-.version-item:hover {
+.history-header {
+    padding: 15px;
+    border-bottom: 1px solid #333;
     background: #252525;
 }
 
-.version-item.active {
-    background: #2c3e50;
-    border-left: 3px solid var(--primary);
+.history-header h4 {
+    margin: 0 0 10px 0;
+    color: #eee;
+    font-size: 0.9rem;
 }
 
-.ver-label {
-    font-size: 13px;
-    font-weight: bold;
+.history-controls {
+    display: flex;
+    gap: 5px;
+}
+
+.history-controls input {
+    flex: 1;
+    background: #121212;
+    border: 1px solid #444;
     color: #fff;
+    padding: 5px;
+    border-radius: 4px;
 }
 
-.ver-date {
-    font-size: 11px;
+.history-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+/* History Item Styling (Plan A) */
+.history-item {
+    padding: 12px 15px;
+    border-bottom: 1px solid #2a2a2a;
+    cursor: pointer;
+    transition: background 0.2s;
+    position: relative;
+}
+
+.history-item:hover {
+    background-color: #2a2a2a;
+}
+
+.history-item .meta {
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 4px;
+}
+
+.history-item .label {
+    font-size: 0.9rem;
+    color: #fff;
+    font-weight: 500;
+}
+
+/* Selected/Current Version Style */
+.history-item.active {
+    background-color: #1e2a22;
+    /* 살짝 녹색 틴트 */
+    border-left: 4px solid #2ecc71;
+    /* 핵심: 초록색 바 */
+}
+
+.history-item.active .label {
+    color: #2ecc71;
+}
+
+.current-badge {
+    display: inline-block;
+    font-size: 0.6rem;
+    background: #2ecc71;
+    color: #000;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 5px;
+    font-weight: bold;
+}
+
+/* Right: Editor Area */
+.modal-editor-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #121212;
+}
+
+.editor-header {
+    padding: 10px 15px;
+    background: #1e1e1e;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.editor-status {
+    font-size: 0.8rem;
     color: #888;
 }
 
-.ver-tag {
+.status-indicator {
     display: inline-block;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 10px;
-    background: #444;
-    color: #ccc;
-    margin-top: 4px;
-    width: fit-content;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
 }
 
-/* 우측: 에디터 영역 */
+.status-indicator.unsaved {
+    background-color: #e74c3c;
+}
+
+.status-indicator.saved {
+    background-color: #2ecc71;
+}
+
+.modal-textarea {
+    flex: 1;
+    width: 100%;
+    background: #121212;
+    color: #eee;
+    border: none;
+    padding: 15px;
+    font-family: 'Fira Code', monospace;
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+}
+
+/* =========================================
+   ★ Plan A: Version Control UI Styles
+   ========================================= */
+
+/* 왼쪽 리스트: 현재 선택된 버전 강조 (초록색) */
+.version-item.active-version {
+    border-left: 4px solid #2ecc71 !important;
+    /* 초록색 기둥 */
+    background: rgba(46, 204, 113, 0.15) !important;
+    /* 은은한 초록 배경 */
+}
+
+/* 왼쪽 리스트: Current 뱃지 */
+.current-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: bold;
+    background: #2ecc71;
+    color: #000;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+    text-transform: uppercase;
+}
+
+/* 오른쪽 헤더: 출처 텍스트 (Based on v1...) */
+.source-info {
+    font-size: 11px;
+    color: #2ecc71;
+    /* 초록색 텍스트 */
+    margin-left: 8px;
+    font-weight: normal;
+    opacity: 0.9;
+}
+
+/* 오른쪽 헤더: 저장되지 않음 경고 (Unsaved Changes) */
+.udm-status.unsaved {
+    color: #e74c3c !important;
+    /* 빨간색 */
+    display: inline-block !important;
+    font-weight: bold;
+}
+
+.udm-status {
+    display: none;
+    /* 평소엔 숨김 */
+    font-size: 11px;
+    margin-left: 10px;
+}
+
+/* === Universal Data Manager Layout Fix === */
+
+/* 모달 내부 전체 컨테이너 */
+.udm-container {
+    display: flex;
+    height: 100%;
+    /* 부모 높이 상속 */
+    overflow: hidden;
+}
+
+/* 오른쪽 메인 영역 (툴바 + 에디터) */
 .udm-main {
     flex: 1;
     display: flex;
     flex-direction: column;
-    background: #222;
+    height: 100%;
+    min-width: 0;
+    /* Flexbox 버그 방지 */
 }
 
-.udm-toolbar {
-    height: 50px;
-    background: #252525;
-    border-bottom: 1px solid #444;
+/* 에디터 감싸는 래퍼 */
+#udm-content-wrapper {
+    flex: 1;
+    /* 남은 공간 모두 차지 */
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 15px;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    background: #1e1e1e;
 }
 
-.udm-info {
-    font-size: 12px;
-    color: #aaa;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.udm-status {
-    color: #e74c3c;
-    font-weight: bold;
-    font-size: 11px;
-    display: none;
-}
-
-.udm-status.unsaved {
-    display: block;
-}
-
-/* === 13. Settings UI (UDM) === */
-.udm-tabs {
-    display: flex;
-    border-bottom: 1px solid #444;
-    margin-bottom: 20px;
-}
-
-.udm-tab-btn {
-    padding: 10px 20px;
-    background: transparent;
+/* 실제 텍스트 에디터 (textarea) */
+#udm-editor {
+    flex: 1;
+    /* 높이 100% 강제 */
+    height: 100% !important;
+    width: 100%;
+    background: #1e1e1e;
+    color: #e0e0e0;
     border: none;
-    color: #888;
-    cursor: pointer;
+    padding: 20px;
+    font-family: 'Consolas', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    resize: none;
+    /* 사용자 리사이즈 방지 (Flex로 자동 조절) */
+    outline: none;
+}
+
+/* 스크롤바 스타일링 */
+#udm-editor::-webkit-scrollbar {
+    width: 10px;
+}
+
+#udm-editor::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+#udm-editor::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 5px;
+}
+
+/* =========================================
+   FIX: Inspector & Timeline Visibility
+   ========================================= */
+
+/* 1. Inspector Panel 열림 강제 적용 */
+#inspector-panel.open {
+    bottom: 0 !important;
+    /* 화면 하단에 붙음 */
+    box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* 2. Timeline Sequence Box (회색 글씨 보이게 수정) */
+.seq-block {
+    overflow: hidden;
+    /* 넘치는 내용 숨김 */
+    background: rgba(255, 255, 255, 0.05);
+    /* 배경 살짝 깔아줌 */
+    border-radius: 4px;
+}
+
+.seq-info {
+    padding: 5px 8px;
+}
+
+.seq-title {
+    font-size: 13px;
     font-weight: bold;
-    border-bottom: 2px solid transparent;
-    transition: 0.2s;
+    color: var(--seq-line-color);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.udm-tab-btn:hover {
-    color: #ddd;
+.seq-desc {
+    font-size: 11px;
+    color: #888;
+    /* 회색 */
+    line-height: 1.3;
+    white-space: normal !important;
+    /* 줄바꿈 허용 */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    /* 최대 2줄까지만 표시 */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
-.udm-tab-btn.active {
-    color: var(--primary);
-    border-bottom-color: var(--primary);
-}
+/* =========================================
+   FIX: Inspector & Settings Modal UI
+   ========================================= */
 
-.udm-section {
-    display: none;
-}
-
-.udm-section.active {
-    display: block;
-    animation: fadeIn 0.3s;
-}
-
-/* 모델 선택 카드 그리드 */
+/* --- 1. Settings Modal (Model Grid) --- */
 .model-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    /* 카드 자동 배치 */
     gap: 15px;
-    margin-bottom: 20px;
+    margin-top: 10px;
 }
 
 .model-card {
     background: #1a1a1a;
     border: 1px solid #444;
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 15px;
     cursor: pointer;
-    transition: 0.2s;
-    position: relative;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
 }
 
 .model-card:hover {
-    border-color: #666;
-    background: #222;
+    background: #252525;
+    transform: translateY(-2px);
 }
 
 .model-card.selected {
-    border-color: var(--primary);
+    border-color: #3498db;
     background: rgba(52, 152, 219, 0.1);
     box-shadow: 0 0 10px rgba(52, 152, 219, 0.2);
 }
 
-.model-card.selected::after {
-    content: '\f00c';
-    /* FontAwesome check */
-    font-family: 'Font Awesome 5 Free';
-    font-weight: 900;
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    color: var(--primary);
-}
-
 .mc-name {
-    font-size: 14px;
     font-weight: bold;
     color: #fff;
-    margin-bottom: 5px;
+    font-size: 14px;
 }
 
 .mc-desc {
-    font-size: 12px;
-    color: #aaa;
-    margin-bottom: 10px;
-    height: 32px;
-    overflow: hidden;
+    font-size: 11px;
+    color: #888;
+    line-height: 1.4;
 }
 
 .mc-price {
     font-size: 11px;
     color: #2ecc71;
-    background: rgba(46, 204, 113, 0.1);
-    padding: 4px 8px;
+    font-weight: bold;
+    margin-top: auto;
+    /* 하단 고정 */
+}
+
+/* --- 2. Inspector Panel (Plan A/B Selection) --- */
+.visual-plan-item {
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: 0.2s;
+    position: relative;
+}
+
+.visual-plan-item:hover {
+    background: #252525;
+}
+
+.visual-plan-item.selected {
+    border: 1px solid #3498db;
+    background: rgba(52, 152, 219, 0.05);
+}
+
+.visual-plan-item.selected::before {
+    content: '✔ Selected';
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 10px;
+    color: #3498db;
+    font-weight: bold;
+    background: rgba(52, 152, 219, 0.1);
+    padding: 2px 6px;
     border-radius: 4px;
-    display: inline-block;
 }
 
-/* 폼 입력 스타일 */
-.form-group {
-    margin-bottom: 15px;
+.plan-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
 }
 
-.form-label {
-    display: block;
-    color: #aaa;
+.plan-radio {
+    accent-color: #3498db;
+    /* 라디오 버튼 색상 */
+    transform: scale(1.2);
+    cursor: pointer;
+}
+
+.plan-title {
+    font-weight: bold;
+    color: #eee;
+    font-size: 13px;
+}
+
+.plan-desc {
     font-size: 12px;
-    margin-bottom: 5px;
+    color: #bbb;
+    line-height: 1.5;
+    padding-left: 24px;
+    /* 라디오 버튼 너비만큼 들여쓰기 */
 }
 
-.form-input {
-    width: 100%;
-    height: 40px;
+/* Overlay & Resource Area */
+.inspector-section-title {
+    font-size: 11px;
+    font-weight: bold;
+    color: #888;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.overlay-box {
     background: #111;
-    border: 1px solid #444;
-    color: white;
-    padding: 0 10px;
+    border: 1px solid #333;
     border-radius: 4px;
-}
-
-.form-input:focus {
-    border-color: var(--primary);
-    outline: none;
+    padding: 10px;
 }
