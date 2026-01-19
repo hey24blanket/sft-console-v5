@@ -8,48 +8,81 @@ export class TimelineRenderer {
         this.container = document.getElementById('track-content');
         this.ruler = document.getElementById('timeline-ruler');
         this.zoomSlider = document.getElementById('zoom-slider');
+
         this.zoom = 5;
         this.CHARS_PER_SECOND = 7000 / 1200;
         this.totalDuration = 0;
         this.START_OFFSET = 20;
         this.GAP_SIZE = 30;
+
         this.TRACK_SCENE_Y = 80;
         this.TRACK_EXP_Y = 135;
-        this.TRACK_AI_STD_Y = 240;
+        this.TRACK_AI_STD_Y = 180;
+        this.TRACK_AI_EXP_Y = 215;
+
         this.initEvents();
-        this.injectBatchButton();
+        this.injectBatchButtons();
     }
 
-    injectBatchButton() {
+    injectBatchButtons() {
         const controls = document.querySelector('.header-controls');
         if (!controls) return;
-        const oldBtn = document.getElementById('btn-batch-ai');
-        if (oldBtn) oldBtn.remove();
-        const btn = document.createElement('button');
-        btn.id = 'btn-batch-ai';
-        btn.className = 'btn';
-        btn.style.cssText = 'margin-left:15px; background:#8e44ad; color:white; border:1px solid #9b59b6; font-weight:bold;';
-        btn.innerHTML = '<i class="fas fa-magic"></i> Generate All AI';
-        btn.onclick = () => this.runBatchAiDirecting(btn);
-        controls.appendChild(btn);
+
+        const oldBtn1 = document.getElementById('btn-batch-gen');
+        const oldBtn2 = document.getElementById('btn-batch-exp');
+        if (oldBtn1) oldBtn1.remove();
+        if (oldBtn2) oldBtn2.remove();
+
+        // 1. General AI Button
+        const btnGen = document.createElement('button');
+        btnGen.id = 'btn-batch-gen';
+        btnGen.className = 'btn';
+        btnGen.style.marginLeft = '15px';
+        btnGen.style.background = '#27ae60';
+        btnGen.style.color = 'white';
+        btnGen.style.border = '1px solid #2ecc71';
+        btnGen.style.fontWeight = 'bold';
+        btnGen.style.fontSize = '11px';
+        btnGen.innerHTML = '<i class="fas fa-magic"></i> Gen All (General)';
+        btnGen.onclick = () => this.runBatchAiDirecting('general', btnGen);
+
+        // 2. Experience AI Button
+        const btnExp = document.createElement('button');
+        btnExp.id = 'btn-batch-exp';
+        btnExp.className = 'btn';
+        btnExp.style.marginLeft = '5px';
+        btnExp.style.background = '#16a085';
+        btnExp.style.color = 'white';
+        btnExp.style.border = '1px solid #1abc9c';
+        btnExp.style.fontWeight = 'bold';
+        btnExp.style.fontSize = '11px';
+        btnExp.innerHTML = '<i class="fas fa-gamepad"></i> Gen All (Exp)';
+        btnExp.onclick = () => this.runBatchAiDirecting('experience', btnExp);
+
+        controls.appendChild(btnGen);
+        controls.appendChild(btnExp);
     }
 
-    async runBatchAiDirecting(btn) {
+    async runBatchAiDirecting(mode, btn) {
         if (!window.directorJson || !window.directorJson.sequences) return alert("데이터가 없습니다.");
-        if (!confirm("모든 일반 씬에 대해 AI Directing을 수행하시겠습니까?\n(기존 AI 데이터는 덮어씌워집니다.)")) return;
+
+        const label = mode === 'general' ? '일반 연출(General)' : '체험 연출(Experience)';
+        if (!confirm(`모든 대상 씬에 대해 [${label}] AI 생성을 수행하시겠습니까?`)) return;
 
         const targets = [];
         window.directorJson.sequences.forEach(seq => {
             if (seq.scenes) {
                 seq.scenes.forEach(scene => {
-                    if (scene.is_screen_rec !== true) {
-                        targets.push(scene);
+                    if (mode === 'general') {
+                        if (scene.is_screen_rec !== true) targets.push(scene);
+                    } else {
+                        if (scene.experience_track && scene.experience_track.has_experience) targets.push(scene);
                     }
                 });
             }
         });
 
-        if (targets.length === 0) return alert("대상 씬이 없습니다.");
+        if (targets.length === 0) return alert("처리할 대상 씬이 없습니다.");
 
         const originalText = btn.innerHTML;
         btn.disabled = true;
@@ -57,16 +90,22 @@ export class TimelineRenderer {
 
         try {
             const config = await db.global_settings.get('main_config') || {};
-            // ★ [KEY CHANGE] master -> api_prompt
-            const promptData = await db.system_prompts.get('api_prompt');
-            const systemPrompt = promptData ? promptData.content : "You are a creative director.";
+
+            // ★ [FIX] 프롬프트 ID 명확히 분기
+            const promptId = mode === 'general' ? 'master_general' : 'master_exp';
+            const promptData = await db.system_prompts.get(promptId);
+
+            console.log(`[Batch] Loading Prompt: ${promptId}`, promptData); // 디버깅용 로그
+
+            const systemPrompt = promptData ? promptData.content :
+                (mode === 'general' ? "You are a creative director." : "You are an interaction designer.");
 
             let successCount = 0;
             let failCount = 0;
 
             for (let i = 0; i < targets.length; i++) {
                 const scene = targets[i];
-                btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Processing (${i + 1}/${targets.length})`;
+                btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${i + 1}/${targets.length}`;
 
                 try {
                     const payload = {
@@ -76,7 +115,7 @@ export class TimelineRenderer {
                         experience_track: scene.experience_track,
                         customConfig: config.ai_config || {},
                         customPrompts: { master: systemPrompt },
-                        isExperienceMode: false
+                        isExperienceMode: (mode === 'experience')
                     };
 
                     const res = await fetch('/api/ai/generate', {
@@ -87,21 +126,35 @@ export class TimelineRenderer {
 
                     if (!res.ok) throw new Error("Server Error");
                     const result = await res.json();
-                    scene.ai_planning = result;
+
+                    const historyKey = mode === 'general' ? 'ai_history' : 'ai_history_exp';
+                    const planningKey = mode === 'general' ? 'ai_planning' : 'ai_planning_exp';
+
+                    if (!scene[historyKey]) scene[historyKey] = [];
+
+                    scene[historyKey].push({
+                        id: Date.now(),
+                        timestamp: new Date().toISOString(),
+                        model: config.ai_config?.model || "Batch-AI",
+                        data: result
+                    });
+
+                    scene[planningKey] = result;
                     successCount++;
+
                 } catch (e) {
-                    console.error(`Failed: ${scene.formatted_id}`, e);
+                    console.error(`Failed [${mode}]: ${scene.formatted_id}`, e);
                     failCount++;
                 }
             }
 
-            alert(`완료!\n성공: ${successCount}건\n실패: ${failCount}건`);
+            alert(`[${label}] 완료!\n성공: ${successCount}건\n실패: ${failCount}건`);
             if (window.ProjectMgrInstance) await window.ProjectMgrInstance.saveDirectorState();
             this.render();
 
         } catch (err) {
             console.error(err);
-            alert("일괄 처리 중 치명적 오류 발생: " + err.message);
+            alert("오류 발생: " + err.message);
         } finally {
             btn.disabled = false;
             btn.style.opacity = "1";
@@ -109,8 +162,12 @@ export class TimelineRenderer {
         }
     }
 
+    // ... (initEvents, fitTimeline 등 나머지 메서드는 기존과 동일 유지)
     initEvents() {
-        this.zoomSlider?.addEventListener('input', (e) => { this.zoom = parseFloat(e.target.value); this.render(); });
+        this.zoomSlider?.addEventListener('input', (e) => {
+            this.zoom = parseFloat(e.target.value);
+            this.render();
+        });
         const trackArea = document.getElementById('track-area');
         if (trackArea) {
             trackArea.addEventListener('scroll', () => { if (this.ruler) this.ruler.style.transform = `translateX(-${trackArea.scrollLeft}px)`; });
@@ -154,9 +211,17 @@ export class TimelineRenderer {
                 const durSec = Math.max(1, charCount / this.CHARS_PER_SECOND);
                 const width = durSec * this.zoom;
                 seqDurationPixels += width;
+
                 this.renderClip(scene, currentLeft, width, 'scene');
-                if (scene.experience_track && scene.experience_track.has_experience) this.renderClip(scene, currentLeft, width, 'exp');
-                if (scene.ai_planning) this.renderClip(scene, currentLeft, width, 'ai_std');
+                if (scene.experience_track && scene.experience_track.has_experience) {
+                    this.renderClip(scene, currentLeft, width, 'exp');
+                }
+                if (scene.ai_planning) {
+                    this.renderClip(scene, currentLeft, width, 'ai_std');
+                }
+                if (scene.ai_planning_exp) {
+                    this.renderClip(scene, currentLeft, width, 'ai_exp');
+                }
                 currentLeft += width + 2;
             });
             const seqBlock = document.createElement('div');
@@ -185,7 +250,10 @@ export class TimelineRenderer {
             clip.style.border = '1px solid #555';
             clip.style.background = isRec ? '#7f8c8d' : '#3498db';
             clip.innerHTML = `<div style="padding:4px; color:white; font-size:11px; font-weight:bold; display:flex; justify-content:space-between;"><span>${scene.formatted_id}</span>${isRec ? '<i class="fas fa-video"></i>' : ''}</div><div style="padding:0 4px; font-size:9px; color:#ddd; overflow:hidden; white-space:nowrap;">${(scene.narrations || [])[0] || ''}</div>`;
-            clip.onclick = (e) => { e.stopPropagation(); if (window.InspectorInstance) window.InspectorInstance.open(scene, 'general'); };
+            clip.onclick = (e) => {
+                e.stopPropagation();
+                if (window.InspectorInstance) window.InspectorInstance.open(scene, 'general');
+            };
         }
         else if (type === 'exp') {
             clip.style.top = `${this.TRACK_EXP_Y}px`;
@@ -193,14 +261,36 @@ export class TimelineRenderer {
             clip.style.background = '#8e44ad';
             clip.style.border = '1px solid #9b59b6';
             clip.innerHTML = `<div style="padding:5px; color:white; font-size:10px; font-weight:bold;">🎮 Exp</div>`;
-            clip.onclick = (e) => { e.stopPropagation(); if (window.InspectorInstance) window.InspectorInstance.open(scene, 'experience'); };
+            clip.onclick = (e) => {
+                e.stopPropagation();
+                if (window.InspectorInstance) window.InspectorInstance.open(scene, 'experience');
+            };
         }
         else if (type === 'ai_std') {
             clip.style.top = `${this.TRACK_AI_STD_Y}px`;
-            clip.style.height = '20px';
-            clip.style.background = '#27ae60';
-            clip.style.opacity = '0.7';
-            clip.onclick = (e) => { e.stopPropagation(); if (this.aiModal) this.aiModal.open({ ...scene, ai_planning: scene.ai_planning }); };
+            clip.style.height = '25px';
+            clip.style.background = '#2ecc71';
+            clip.style.border = '1px solid #27ae60';
+            clip.style.borderRadius = '3px';
+            clip.title = "AI General Plan";
+            clip.innerHTML = `<div style="color:#000; font-size:10px; font-weight:bold; padding:2px 4px; display:flex; align-items:center; gap:4px;"><i class="fas fa-robot"></i> ${scene.formatted_id}</div>`;
+            clip.onclick = (e) => {
+                e.stopPropagation();
+                if (this.aiModal) this.aiModal.open(scene, 'general');
+            };
+        }
+        else if (type === 'ai_exp') {
+            clip.style.top = `${this.TRACK_AI_EXP_Y}px`;
+            clip.style.height = '25px';
+            clip.style.background = '#16a085';
+            clip.style.border = '1px solid #1abc9c';
+            clip.style.borderRadius = '3px';
+            clip.title = "AI Experience Plan";
+            clip.innerHTML = `<div style="color:white; font-size:10px; font-weight:bold; padding:2px 4px; display:flex; align-items:center; gap:4px;"><i class="fas fa-gamepad"></i> EXP</div>`;
+            clip.onclick = (e) => {
+                e.stopPropagation();
+                if (this.aiModal) this.aiModal.open(scene, 'experience');
+            };
         }
         this.container.appendChild(clip);
     }

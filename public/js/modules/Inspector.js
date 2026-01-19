@@ -18,7 +18,9 @@ export class Inspector {
         this.currentScene = null;
         this.mode = 'general';
         this.saveCallback = saveCallback;
+
         this.activeKeywordTabIndex = 0;
+
         this.initEvents();
         this.initResize();
     }
@@ -78,6 +80,7 @@ export class Inspector {
         this.close();
     }
 
+    // ★ AI Directing with History Support
     async handleAiDirecting() {
         if (!this.currentScene) return;
         const btn = document.getElementById('btn-inspector-ai');
@@ -85,8 +88,7 @@ export class Inspector {
 
         try {
             const config = await db.global_settings.get('main_config') || {};
-            // ★ [KEY CHANGE] master -> api_prompt
-            const promptData = await db.system_prompts.get('api_prompt');
+            const promptData = await db.system_prompts.get('master');
             const systemPrompt = promptData ? promptData.content : "You are a creative director.";
 
             const payload = {
@@ -107,19 +109,50 @@ export class Inspector {
 
             if (!res.ok) throw new Error("AI Server Error");
             const result = await res.json();
+
+            // ★ 히스토리 저장
+            if (!this.currentScene.ai_history) this.currentScene.ai_history = [];
+            this.currentScene.ai_history.push({
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                model: config.ai_config?.model || "Single-AI",
+                data: result
+            });
+
+            // 현재 데이터 업데이트
             this.currentScene.ai_planning = result;
+
+            // UI 갱신 (헤더의 버전 드롭다운 갱신을 위해)
+            this.render();
 
             if (window.TimelineRendererInstance) window.TimelineRendererInstance.render();
             if (window.AiResultModalInstance) {
                 window.AiResultModalInstance.open(this.currentScene);
-            } else {
-                alert("AI Result Modal module not loaded.");
             }
+
         } catch (e) {
             console.error(e);
             alert("AI Generation Failed: " + e.message);
         } finally {
             if (btn) btn.innerHTML = '<i class="fas fa-magic"></i> AI Directing';
+        }
+    }
+
+    // ★ History Restore (버전 복구)
+    restoreVersion(historyId) {
+        if (!this.currentScene || !this.currentScene.ai_history) return;
+
+        // ID로 찾기 (문자열 변환 대비)
+        const record = this.currentScene.ai_history.find(h => h.id == historyId);
+        if (record && record.data) {
+            if (confirm(`[v${historyId}] 버전으로 복구하시겠습니까?`)) {
+                this.currentScene.ai_planning = record.data;
+                // 씬 전체 갱신 (Inspector 내용은 AI 결과와 별개이므로 여기서는 타임라인 클립과 AI 모달 데이터만 바뀜. 
+                // 만약 AI 결과가 씬의 visual_plans 등을 덮어씌운다면 아래 render 호출로 반영됨)
+                this.render();
+                if (window.TimelineRendererInstance) window.TimelineRendererInstance.render();
+                if (window.Toast) window.Toast.show("Version Restored!");
+            }
         }
     }
 
@@ -137,6 +170,19 @@ export class Inspector {
         const charCount = scene.total_char_count || (scene.narrations || []).join("").length;
         const durationSec = (charCount * (1200 / 7000)).toFixed(1);
 
+        // ★ History Dropdown Options 생성
+        let historyOptions = `<option value="">🕒 History (0)</option>`;
+        if (scene.ai_history && scene.ai_history.length > 0) {
+            historyOptions = `<option value="" disabled selected>🕒 History (${scene.ai_history.length})</option>`;
+            // 최신순 정렬
+            [...scene.ai_history].reverse().forEach((h, idx) => {
+                const time = new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const verNum = scene.ai_history.length - idx;
+                historyOptions += `<option value="${h.id}">v${verNum} - ${time} (${h.model})</option>`;
+            });
+        }
+
+        // --- Header ---
         const header = document.createElement('div');
         header.className = 'inspector-header';
         header.style.padding = "10px 15px";
@@ -151,13 +197,18 @@ export class Inspector {
                     <span>${scene.formatted_id}</span>
                     ${isRec ? '<span style="color:#7f8c8d; font-size:11px; border:1px solid #555; padding:1px 4px; border-radius:3px;">Screen Rec</span>' : ''}
                     <span style="font-size:11px; color:#f1c40f; font-weight:normal; margin-left:5px;">
-                        <i class="far fa-clock"></i> ${durationSec}s (${charCount}자)
+                        <i class="far fa-clock"></i> ${durationSec}s
                     </span>
                     ${this.mode === 'experience' ? '<span style="background:#8e44ad; color:white; font-size:10px; padding:2px 6px; border-radius:4px;">EXP Mode</span>' : ''}
                 </div>
             </div>
             <div style="display:flex; gap:8px; align-items:center;">
-                ${!isRec ? `<button class="btn" id="btn-inspector-ai" style="background:#8e44ad; color:white; font-size:11px; padding:5px 10px;"><i class="fas fa-magic"></i> AI Directing</button>` : ''}
+                ${!isRec ? `
+                    <select id="sel-history" style="background:#111; color:#aaa; border:1px solid #444; font-size:11px; padding:4px; max-width:140px;">
+                        ${historyOptions}
+                    </select>
+                    <button class="btn" id="btn-inspector-ai" style="background:#8e44ad; color:white; font-size:11px; padding:5px 10px;"><i class="fas fa-magic"></i> AI Directing</button>
+                ` : ''}
                 <button class="btn btn-primary" onclick="window.InspectorInstance.save()" style="font-size:11px; padding:5px 10px;">Save</button>
                 <button class="btn-icon btn-close-inspector" style="font-size:14px;"><i class="fas fa-times"></i></button>
             </div>
@@ -167,6 +218,15 @@ export class Inspector {
         const aiBtn = header.querySelector('#btn-inspector-ai');
         if (aiBtn) aiBtn.onclick = () => this.handleAiDirecting();
 
+        // History Select Event
+        const historySel = header.querySelector('#sel-history');
+        if (historySel) {
+            historySel.onchange = (e) => {
+                if (e.target.value) this.restoreVersion(e.target.value);
+            };
+        }
+
+        // --- Body (Safe Render) ---
         const body = document.createElement('div');
         body.className = 'inspector-body';
         body.style.display = 'flex';
@@ -176,6 +236,7 @@ export class Inspector {
         body.style.overflow = 'hidden';
 
         try {
+            // [Column 1] Narration
             const col1 = document.createElement('div');
             col1.className = 'inspector-column';
             col1.style.flex = '1';
@@ -225,10 +286,12 @@ export class Inspector {
                     col3.className = 'inspector-column';
                     col3.style.flex = '1';
                     col3.appendChild(this.renderToolUI(scene));
+
                     const divKW = document.createElement('div');
                     divKW.style.height = '15px';
                     col3.appendChild(divKW);
                     col3.appendChild(this.renderKeywordUI(scene));
+
                     const divAsset = document.createElement('div');
                     divAsset.style.height = '15px';
                     col3.appendChild(divAsset);
@@ -238,7 +301,7 @@ export class Inspector {
             }
         } catch (err) {
             console.error("Inspector Render Error:", err);
-            body.innerHTML += `<div style="padding:20px; color:red;"><h3>Error</h3><pre>${err.message}</pre></div>`;
+            body.innerHTML += `<div style="padding:20px; color:red; border:1px solid red;"><h3>Rendering Error</h3><pre>${err.message}</pre></div>`;
         }
 
         this.container.appendChild(body);
@@ -290,13 +353,15 @@ export class Inspector {
         select.style.color = "#eee";
         select.style.border = "1px solid #444";
         select.style.padding = "5px";
+        select.style.marginBottom = "10px";
         let options = `<option value="">(선택 안함)</option>`;
         for (const [id, name] of Object.entries(TOOL_NAMES)) {
             options += `<option value="${id}" ${id === currentToolId ? 'selected' : ''}>${name}</option>`;
         }
         select.innerHTML = options;
         select.addEventListener('change', (e) => {
-            toolData.ranked_tools = [{ tool_id: e.target.value, rank: 1, reason: "Manual" }];
+            const newId = e.target.value;
+            toolData.ranked_tools = [{ tool_id: newId, rank: 1, reason: "Manual" }];
             toolData.source = "manual";
             this.render();
         });
@@ -327,53 +392,78 @@ export class Inspector {
         if (!scene.keyword_emphasis) scene.keyword_emphasis = [];
         else if (!Array.isArray(scene.keyword_emphasis)) scene.keyword_emphasis = [scene.keyword_emphasis];
         const keywords = scene.keyword_emphasis;
-
         const tabBar = document.createElement('div');
-        tabBar.style.display = "flex"; tabBar.style.gap = "4px"; tabBar.style.marginBottom = "10px"; tabBar.style.flexWrap = "wrap";
+        tabBar.style.display = "flex";
+        tabBar.style.gap = "4px";
+        tabBar.style.marginBottom = "10px";
+        tabBar.style.flexWrap = "wrap";
         keywords.forEach((kw, idx) => {
             const btn = document.createElement('button');
             const isActive = idx === this.activeKeywordTabIndex;
             btn.innerText = `KW ${idx + 1}`;
-            btn.style.cssText = `padding:4px 8px; font-size:11px; border:1px solid #444; background:${isActive ? "#1abc9c" : "#333"}; color:${isActive ? "#000" : "#ccc"}; cursor:pointer; border-radius:3px;`;
+            btn.style.padding = "4px 8px";
+            btn.style.fontSize = "11px";
+            btn.style.border = "1px solid #444";
+            btn.style.background = isActive ? "#1abc9c" : "#333";
+            btn.style.color = isActive ? "#000" : "#ccc";
+            btn.style.cursor = "pointer";
+            btn.style.borderRadius = "3px";
             btn.onclick = () => { this.activeKeywordTabIndex = idx; this.render(); };
             tabBar.appendChild(btn);
         });
         const addBtn = document.createElement('button');
         addBtn.innerText = "+";
-        addBtn.style.cssText = "padding:4px 8px; font-size:11px; border:1px solid #444; background:#222; color:#1abc9c; cursor:pointer; border-radius:3px;";
-        addBtn.onclick = () => { keywords.push({ keyword: "", location: "Center", action: "", highlight: "", sub_text: "" }); this.activeKeywordTabIndex = keywords.length - 1; this.render(); };
+        addBtn.style.padding = "4px 8px";
+        addBtn.style.fontSize = "11px";
+        addBtn.style.border = "1px solid #444";
+        addBtn.style.background = "#222";
+        addBtn.style.color = "#1abc9c";
+        addBtn.style.cursor = "pointer";
+        addBtn.style.borderRadius = "3px";
+        addBtn.onclick = () => {
+            keywords.push({ keyword: "", location: "Center", action: "", highlight: "", sub_text: "" });
+            this.activeKeywordTabIndex = keywords.length - 1;
+            this.render();
+        };
         tabBar.appendChild(addBtn);
         wrap.appendChild(tabBar);
-
         if (keywords.length === 0) {
             wrap.innerHTML += `<div style="text-align:center; color:#666; font-size:11px; padding:10px;">No keywords added.</div>`;
         } else {
             if (this.activeKeywordTabIndex >= keywords.length) this.activeKeywordTabIndex = 0;
             const currentKW = keywords[this.activeKeywordTabIndex];
             const formContainer = document.createElement('div');
-            formContainer.style.cssText = "background:#2a2a2a; padding:10px; border-radius:4px; border:1px solid #333;";
-            const createField = (label, key, ph, isArea = false) => {
-                const div = document.createElement('div'); div.style.marginBottom = "8px";
+            formContainer.style.background = "#2a2a2a";
+            formContainer.style.padding = "10px";
+            formContainer.style.borderRadius = "4px";
+            formContainer.style.border = "1px solid #333";
+            const createField = (label, key, placeholder, isArea = false) => {
+                const div = document.createElement('div');
+                div.style.marginBottom = "8px";
                 div.innerHTML = `<div style="font-size:10px; color:#888; margin-bottom:2px;">${label}</div>`;
                 const input = isArea ? document.createElement('textarea') : document.createElement('input');
                 if (isArea) input.style.height = "40px"; else input.type = "text";
-                input.style.cssText += "width:100%; background:#1a1a1a; color:#eee; border:1px solid #444; padding:4px; font-size:12px;";
-                input.placeholder = ph;
+                input.placeholder = placeholder;
                 input.value = currentKW[key] || "";
-                input.onchange = (e) => currentKW[key] = e.target.value;
+                input.style.width = "100%";
+                input.style.background = "#1a1a1a";
+                input.style.color = "#eee";
+                input.style.border = "1px solid #444";
+                input.style.padding = "4px";
+                input.style.fontSize = "12px";
+                input.onchange = (e) => { currentKW[key] = e.target.value; };
                 div.appendChild(input);
                 return div;
             };
-            formContainer.appendChild(createField("Keyword", "keyword", "데이터"));
+            formContainer.appendChild(createField("Keyword", "keyword", "데이터 (Data)"));
             formContainer.appendChild(createField("Location", "location", "Center"));
-            formContainer.appendChild(createField("Action", "action", "Stacking up", true));
-            formContainer.appendChild(createField("Highlight", "highlight", "Neon Glow"));
-            formContainer.appendChild(createField("Sub Text", "sub_text", "설명"));
-
+            formContainer.appendChild(createField("Action", "action", "Stacking up blocks", true));
+            formContainer.appendChild(createField("Highlight", "highlight", "Cyan Neon Glow"));
+            formContainer.appendChild(createField("Sub Text", "sub_text", "AI 학습의 원천"));
             const delBtn = document.createElement('button');
             delBtn.innerHTML = '<i class="fas fa-trash"></i> Delete Keyword';
             delBtn.style.cssText = "width:100%; padding:6px; margin-top:5px; background:#c0392b; color:white; border:none; border-radius:3px; cursor:pointer; font-size:11px;";
-            delBtn.onclick = () => { if (confirm("Delete?")) { keywords.splice(this.activeKeywordTabIndex, 1); this.activeKeywordTabIndex = Math.max(0, this.activeKeywordTabIndex - 1); this.render(); } };
+            delBtn.onclick = () => { if (confirm("Delete this keyword?")) { keywords.splice(this.activeKeywordTabIndex, 1); this.activeKeywordTabIndex = Math.max(0, this.activeKeywordTabIndex - 1); this.render(); } };
             formContainer.appendChild(delBtn);
             wrap.appendChild(formContainer);
         }
@@ -407,15 +497,19 @@ export class Inspector {
         toggle.innerHTML = `<label style="color:#eee; font-size:12px;"><input type="checkbox" ${hasExp ? 'checked' : ''}> <span style="margin-left:5px;">체험 요소 활성화</span></label>`;
         wrap.appendChild(toggle);
         const detail = document.createElement('div');
-        detail.style.cssText = `display:${hasExp ? "block" : "none"}; border-left:2px solid #9b59b6; padding-left:10px; margin-top:10px;`;
+        detail.style.cssText = `display:${hasExp ? 'block' : 'none'}; border-left:2px solid #9b59b6; padding-left:10px; margin-top:10px;`;
         const exp = scene.experience_track || { title: "", interaction_type: "", guide: "" };
         detail.innerHTML = `<input type="text" id="exp-title" placeholder="Title" value="${exp.title || ''}" style="width:100%; margin-bottom:5px; background:#333; color:#fff; border:none; padding:4px;"><input type="text" id="exp-type" placeholder="Type" value="${exp.interaction_type || ''}" style="width:100%; margin-bottom:5px; background:#333; color:#fff; border:none; padding:4px;"><textarea id="exp-guide" placeholder="Guide" style="width:100%; height:60px; background:#222; color:#ccc;">${exp.guide || ''}</textarea>`;
         wrap.appendChild(detail);
         toggle.querySelector('input').onchange = (e) => {
             const chk = e.target.checked;
             detail.style.display = chk ? "block" : "none";
-            if (chk) { if (!scene.experience_track) scene.experience_track = { has_experience: true, title: "", interaction_type: "", guide: "" }; else scene.experience_track.has_experience = true; }
-            else { scene.experience_track = null; }
+            if (chk) {
+                if (!scene.experience_track) scene.experience_track = { has_experience: true, title: "", interaction_type: "", guide: "" };
+                else scene.experience_track.has_experience = true;
+            } else {
+                scene.experience_track = null;
+            }
         };
         detail.querySelectorAll('input, textarea').forEach(el => {
             el.onchange = (e) => {
